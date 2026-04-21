@@ -1,0 +1,22 @@
+services:
+  formula-db:
+    image: postgres:16
+    container_name: formql-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: formula
+      POSTGRES_PASSWORD: formula
+      POSTGRES_DB: formula
+    ports:
+      - "54329:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U formula -d formula"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - formula-db-data:/var/lib/postgresql/data
+      - ./docker/postgres/init/01-seed.sql:/docker-entrypoint-initdb.d/01-seed.sql:ro
+
+volumes:
+  formula-db-data:
