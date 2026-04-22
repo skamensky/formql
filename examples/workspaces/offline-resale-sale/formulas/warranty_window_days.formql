@@ -1,0 +1,1 @@
+DATE(sale_date) + warranty_months - sale_date

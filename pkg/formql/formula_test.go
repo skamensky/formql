@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/skamensky/formql/pkg/formql"
+	"github.com/skamensky/formql/pkg/formql/diagnostic"
 	"github.com/skamensky/formql/pkg/formql/schema"
 )
 
@@ -51,6 +52,27 @@ func (m *mockCatalog) Relationship(fromTable, relationshipName string) (*schema.
 	}
 	copy := rel
 	return &copy, true
+}
+
+func (m *mockCatalog) ColumnsForTable(name string) []schema.Column {
+	table, ok := m.Table(name)
+	if !ok {
+		return nil
+	}
+	columns := make([]schema.Column, len(table.Columns))
+	copy(columns, table.Columns)
+	return columns
+}
+
+func (m *mockCatalog) RelationshipsFrom(tableName string) []schema.Relationship {
+	prefix := strings.ToLower(tableName) + ":"
+	relationships := make([]schema.Relationship, 0)
+	for key, relationship := range m.relationships {
+		if strings.HasPrefix(key, prefix) {
+			relationships = append(relationships, relationship)
+		}
+	}
+	return relationships
 }
 
 func boolPtr(value bool) *bool {
@@ -217,5 +239,214 @@ func TestUnknownColumnReturnsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unknown column") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestMissingOperatorDiagnosticIncludesHint(t *testing.T) {
+	_, err := formql.Parse(`IF(customer_rel.email = NULL, "missing-email", customer_rel.first_name " " & customer_rel.last_name)`)
+	if err == nil {
+		t.Fatal("expected parse error")
+	}
+
+	typed, ok := diagnostic.AsError(err)
+	if !ok {
+		t.Fatalf("expected diagnostic error, got %T", err)
+	}
+	if typed.Code != "missing_operator_between_expressions" {
+		t.Fatalf("unexpected code: %s", typed.Code)
+	}
+	if !strings.Contains(typed.Hint, "use '&'") {
+		t.Fatalf("unexpected hint: %s", typed.Hint)
+	}
+}
+
+func TestMissingFunctionCloseDiagnosticIncludesClosingParenHint(t *testing.T) {
+	_, err := formql.Parse(`IF(customer_rel.email = NULL, "missing-email", customer_rel.first_name & " " & customer_rel.last_name`)
+	if err == nil {
+		t.Fatal("expected parse error")
+	}
+
+	typed, ok := diagnostic.AsError(err)
+	if !ok {
+		t.Fatalf("expected diagnostic error, got %T", err)
+	}
+	if typed.Code != "unexpected_token" {
+		t.Fatalf("unexpected code: %s", typed.Code)
+	}
+	if !strings.Contains(typed.Message, "expected ')'") {
+		t.Fatalf("unexpected message: %s", typed.Message)
+	}
+	if !strings.Contains(typed.Hint, "close the function call with ')'") {
+		t.Fatalf("unexpected hint: %s", typed.Hint)
+	}
+}
+
+func TestUnknownColumnDiagnosticSuggestsClosestMatch(t *testing.T) {
+	catalog := &mockCatalog{
+		baseTable: "submission",
+		tables: map[string]schema.Table{
+			"submission": {
+				Name: "submission",
+				Columns: []schema.Column{
+					{Name: "amount", Type: schema.TypeNumber},
+					{Name: "stage", Type: schema.TypeString},
+				},
+			},
+		},
+		relationships: map[string]schema.Relationship{},
+	}
+
+	_, err := formql.Compile("amunt", catalog, "result")
+	if err == nil {
+		t.Fatal("expected compile error")
+	}
+
+	typed, ok := diagnostic.AsError(err)
+	if !ok {
+		t.Fatalf("expected diagnostic error, got %T", err)
+	}
+	if typed.Code != "unknown_column" {
+		t.Fatalf("unexpected code: %s", typed.Code)
+	}
+	if !strings.Contains(typed.Hint, "amount") {
+		t.Fatalf("expected closest-match hint, got %q", typed.Hint)
+	}
+}
+
+func TestUnknownRelationshipDiagnosticSuggestsRelName(t *testing.T) {
+	catalog := &mockCatalog{
+		baseTable: "opportunity",
+		tables: map[string]schema.Table{
+			"opportunity": {
+				Name: "opportunity",
+				Columns: []schema.Column{
+					{Name: "customer_id", Type: schema.TypeNumber},
+				},
+			},
+			"customer": {
+				Name: "customer",
+				Columns: []schema.Column{
+					{Name: "email", Type: schema.TypeString},
+				},
+			},
+		},
+		relationships: map[string]schema.Relationship{
+			"opportunity:customer": {
+				Name:         "customer",
+				FromTable:    "opportunity",
+				ToTable:      "customer",
+				JoinColumn:   "customer_id",
+				TargetColumn: "id",
+			},
+		},
+	}
+
+	_, err := formql.Compile(`custmer_rel.email`, catalog, "result")
+	if err == nil {
+		t.Fatal("expected compile error")
+	}
+
+	typed, ok := diagnostic.AsError(err)
+	if !ok {
+		t.Fatalf("expected diagnostic error, got %T", err)
+	}
+	if typed.Code != "unknown_relationship" {
+		t.Fatalf("unexpected code: %s", typed.Code)
+	}
+	if !strings.Contains(typed.Hint, "customer_rel") {
+		t.Fatalf("expected relationship suggestion, got %q", typed.Hint)
+	}
+}
+
+func TestUnknownFunctionDiagnosticSuggestsBuiltinSignature(t *testing.T) {
+	catalog := &mockCatalog{
+		baseTable: "submission",
+		tables: map[string]schema.Table{
+			"submission": {
+				Name: "submission",
+				Columns: []schema.Column{
+					{Name: "amount", Type: schema.TypeNumber},
+				},
+			},
+		},
+		relationships: map[string]schema.Relationship{},
+	}
+
+	_, err := formql.Compile(`IFF(amount > 0, "yes", "no")`, catalog, "result")
+	if err == nil {
+		t.Fatal("expected compile error")
+	}
+
+	typed, ok := diagnostic.AsError(err)
+	if !ok {
+		t.Fatalf("expected diagnostic error, got %T", err)
+	}
+	if typed.Code != "unknown_function" {
+		t.Fatalf("unexpected code: %s", typed.Code)
+	}
+	if !strings.Contains(typed.Hint, "IF(condition, whenTrue, whenFalse)") {
+		t.Fatalf("expected builtin suggestion, got %q", typed.Hint)
+	}
+}
+
+func TestStringConcatTypeDiagnosticSuggestsSTRINGCast(t *testing.T) {
+	catalog := &mockCatalog{
+		baseTable: "submission",
+		tables: map[string]schema.Table{
+			"submission": {
+				Name: "submission",
+				Columns: []schema.Column{
+					{Name: "amount", Type: schema.TypeNumber},
+				},
+			},
+		},
+		relationships: map[string]schema.Relationship{},
+	}
+
+	_, err := formql.Compile(`amount & " usd"`, catalog, "result")
+	if err == nil {
+		t.Fatal("expected compile error")
+	}
+
+	typed, ok := diagnostic.AsError(err)
+	if !ok {
+		t.Fatalf("expected diagnostic error, got %T", err)
+	}
+	if typed.Code != "invalid_concat_operands" {
+		t.Fatalf("unexpected code: %s", typed.Code)
+	}
+	if !strings.Contains(typed.Hint, "STRING(...)") {
+		t.Fatalf("expected cast hint, got %q", typed.Hint)
+	}
+}
+
+func TestFunctionArityDiagnosticIncludesSignatureHint(t *testing.T) {
+	catalog := &mockCatalog{
+		baseTable: "submission",
+		tables: map[string]schema.Table{
+			"submission": {
+				Name: "submission",
+				Columns: []schema.Column{
+					{Name: "amount", Type: schema.TypeNumber},
+				},
+			},
+		},
+		relationships: map[string]schema.Relationship{},
+	}
+
+	_, err := formql.Compile(`IF(amount > 0, "yes")`, catalog, "result")
+	if err == nil {
+		t.Fatal("expected compile error")
+	}
+
+	typed, ok := diagnostic.AsError(err)
+	if !ok {
+		t.Fatalf("expected diagnostic error, got %T", err)
+	}
+	if typed.Code != "invalid_function_arity" {
+		t.Fatalf("unexpected code: %s", typed.Code)
+	}
+	if !strings.Contains(typed.Hint, "IF(condition, whenTrue, whenFalse)") {
+		t.Fatalf("expected signature hint, got %q", typed.Hint)
 	}
 }

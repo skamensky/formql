@@ -1,0 +1,1 @@
+rep_rel.manager_rel.last_name & " / " & rep_rel.branch_rel.city

@@ -1,0 +1,1 @@
+IF(pickup_branch_rel.region = dropoff_branch_rel.region, "same-region", "cross-region")

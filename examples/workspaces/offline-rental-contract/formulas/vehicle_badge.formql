@@ -1,0 +1,1 @@
+UPPER(vehicle_rel.class_code) & "-" & LOWER(branch_rel.region)

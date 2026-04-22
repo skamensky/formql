@@ -1,0 +1,2 @@
+/* Vehicle lineage path through purchase and vendor ownership. */
+vehicle_rel.model_name & " / " & STRING(vehicle_rel.model_year) & " / " & vehicle_rel.purchase_rel.vendor_rel.name

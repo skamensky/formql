@@ -1,0 +1,1 @@
+ROUND(actual_total / actual_days, 2)

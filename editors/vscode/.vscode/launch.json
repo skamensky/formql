@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run FormQL Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "${workspaceFolder}/../../examples/workspaces/offline-opportunity"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/src/**/*.js"
+      ]
+    }
+  ]
+}

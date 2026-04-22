@@ -1,0 +1,1 @@
+offer_rel.pickup_branch_rel.name & " -> " & offer_rel.dropoff_branch_rel.name & " / " & vehicle_rel.current_branch_rel.city

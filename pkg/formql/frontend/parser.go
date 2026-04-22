@@ -29,6 +29,41 @@ type parser struct {
 	current token.Token
 }
 
+func (p *parser) expectedTokenError(expected token.Type, hint string) error {
+	return diagnostic.NewError(
+		"parser",
+		"unexpected_token",
+		fmt.Sprintf("expected %s, got %s", expected.HumanLabel(), p.current.HumanLabel()),
+		hint,
+		p.current.Position,
+	)
+}
+
+func (p *parser) missingOperatorError() error {
+	hint := "insert an operator between the two expressions"
+	if p.current.Type == token.STRING {
+		hint = "use '&' for string concatenation"
+	}
+	return diagnostic.NewError(
+		"parser",
+		"missing_operator_between_expressions",
+		fmt.Sprintf("missing operator between expressions before %s", p.current.HumanLabel()),
+		hint,
+		p.current.Position,
+	)
+}
+
+func (p *parser) expectedFunctionCloseHint() string {
+	switch {
+	case p.current.Type == token.EOF:
+		return "close the function call with ')'"
+	case token.StartsExpression(p.current.Type):
+		return "separate function arguments with commas"
+	default:
+		return "close the function call with ')'"
+	}
+}
+
 func (p *parser) next() error {
 	next, err := p.lexer.nextToken()
 	if err != nil {
@@ -40,7 +75,7 @@ func (p *parser) next() error {
 
 func (p *parser) eat(expected token.Type) error {
 	if p.current.Type != expected {
-		return diagnostic.New("parser", fmt.Sprintf("expected %s, got %s", expected, p.current.Type), p.current.Position)
+		return p.expectedTokenError(expected, "")
 	}
 	return p.next()
 }
@@ -56,7 +91,10 @@ func (p *parser) parse() (ast.Expr, error) {
 	}
 
 	if p.current.Type != token.EOF {
-		return nil, diagnostic.New("parser", "unexpected token after expression", p.current.Position)
+		if token.StartsExpression(p.current.Type) {
+			return nil, p.missingOperatorError()
+		}
+		return nil, diagnostic.NewError("parser", "unexpected_token_after_expression", fmt.Sprintf("unexpected %s after the end of the expression", p.current.HumanLabel()), "remove the extra token or add an operator before it", p.current.Position)
 	}
 
 	return node, nil
@@ -158,7 +196,7 @@ func (p *parser) parseTerm() (ast.Expr, error) {
 func (p *parser) parseFactor() (ast.Expr, error) {
 	switch p.current.Type {
 	case token.PLUS:
-		return nil, diagnostic.New("parser", "unary plus operator is not supported", p.current.Position)
+		return nil, diagnostic.NewError("parser", "unsupported_unary_plus", "unary plus is not supported", "remove the leading '+'", p.current.Position)
 	case token.MINUS:
 		pos := p.current.Position
 		if err := p.next(); err != nil {
@@ -178,7 +216,7 @@ func (p *parser) parseFactor() (ast.Expr, error) {
 		pos := p.current.Position
 		value, err := strconv.ParseFloat(p.current.Literal, 64)
 		if err != nil {
-			return nil, diagnostic.New("parser", "invalid numeric literal", pos)
+			return nil, diagnostic.NewError("parser", "invalid_numeric_literal", "invalid numeric literal", "check the number format", pos)
 		}
 		if err := p.next(); err != nil {
 			return nil, err
@@ -202,13 +240,16 @@ func (p *parser) parseFactor() (ast.Expr, error) {
 			return nil, err
 		}
 		if err := p.eat(token.RPAREN); err != nil {
+			if token.StartsExpression(p.current.Type) {
+				return nil, p.missingOperatorError()
+			}
 			return nil, err
 		}
 		return node, nil
 	case token.EOF:
-		return nil, diagnostic.New("parser", "unexpected end of formula", p.current.Position)
+		return nil, diagnostic.NewError("parser", "unexpected_end_of_formula", "unexpected end of formula", "finish the expression or close any open function calls and parentheses", p.current.Position)
 	default:
-		return nil, diagnostic.New("parser", fmt.Sprintf("unexpected token %s", p.current.Type), p.current.Position)
+		return nil, diagnostic.NewError("parser", "unexpected_token", fmt.Sprintf("unexpected %s", p.current.HumanLabel()), "check for a missing operator or an extra token", p.current.Position)
 	}
 }
 
@@ -242,8 +283,11 @@ func (p *parser) parseIdentifierLike() (ast.Expr, error) {
 				}
 			}
 		}
+		if token.StartsExpression(p.current.Type) {
+			return nil, p.missingOperatorError()
+		}
 		if err := p.eat(token.RPAREN); err != nil {
-			return nil, err
+			return nil, p.expectedTokenError(token.RPAREN, p.expectedFunctionCloseHint())
 		}
 		return &ast.CallExpr{
 			Kind: "call_expr",
@@ -281,7 +325,7 @@ func (p *parser) parseRelationship(first string, pos int) (ast.Expr, error) {
 			return nil, err
 		}
 		if p.current.Type != token.IDENT {
-			return nil, diagnostic.New("parser", "relationship path must end in an identifier", p.current.Position)
+			return nil, diagnostic.NewError("parser", "invalid_relationship_path", fmt.Sprintf("relationship path must end in a field name, got %s", p.current.HumanLabel()), "relationship paths look like customer_rel.email", p.current.Position)
 		}
 
 		segment := strings.ToLower(p.current.Literal)
@@ -291,7 +335,7 @@ func (p *parser) parseRelationship(first string, pos int) (ast.Expr, error) {
 
 		if strings.HasSuffix(segment, "_rel") {
 			if p.current.Type != token.DOT {
-				return nil, diagnostic.New("parser", "relationship path must end in a field, not another relationship", pos)
+				return nil, diagnostic.NewError("parser", "invalid_relationship_path", "relationship path must end in a field, not another relationship", "add a field name after the relationship path, for example customer_rel.email", pos)
 			}
 			chain = append(chain, strings.TrimSuffix(segment, "_rel"))
 			continue

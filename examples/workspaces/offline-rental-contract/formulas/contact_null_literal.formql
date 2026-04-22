@@ -1,0 +1,1 @@
+IF(customer_rel.email = NULL, "missing-email", "has-email")

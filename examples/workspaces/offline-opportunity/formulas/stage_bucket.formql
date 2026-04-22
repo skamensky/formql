@@ -1,0 +1,1 @@
+IF(stage = "won", "closed", IF(stage = "offer", "active", "pipeline"))

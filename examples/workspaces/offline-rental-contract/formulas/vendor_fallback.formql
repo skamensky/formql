@@ -1,0 +1,1 @@
+IF(vehicle_rel.status = "retired", vehicle_rel.fleet_rel.vendor_rel.name, vehicle_rel.vendor_rel.name)

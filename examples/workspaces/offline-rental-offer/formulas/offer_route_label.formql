@@ -1,0 +1,1 @@
+pickup_branch_rel.name & " -> " & dropoff_branch_rel.name & " / " & vehicle_rel.class_code

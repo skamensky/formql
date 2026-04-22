@@ -1,0 +1,1 @@
+IF(OR(returned_late = TRUE, damage_fee > 0, extension_count >= 2), "review", "clear")

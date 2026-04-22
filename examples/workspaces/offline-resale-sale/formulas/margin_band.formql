@@ -1,0 +1,1 @@
+IF(margin_amount > 4000, "strong-margin", IF(trade_in = TRUE, "trade-in", "thin-margin"))

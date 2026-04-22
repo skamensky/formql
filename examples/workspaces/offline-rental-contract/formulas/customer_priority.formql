@@ -1,0 +1,2 @@
+// Repeat-customer routing with a multi-argument AND.
+IF(AND(customer_rel.repeat_customer = TRUE, customer_rel.prior_contract_count > 5, actual_days >= 3), customer_rel.first_name & " " & customer_rel.last_name & " / " & customer_rel.assigned_rep_rel.first_name, customer_rel.first_name & " " & customer_rel.last_name)

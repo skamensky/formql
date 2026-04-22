@@ -1,0 +1,9 @@
+{
+  "formql.serverPath": "go",
+  "formql.serverArgs": [
+    "run",
+    "${workspaceFolder}/../../../cmd/formqlc"
+  ],
+  "formql.schemaPath": "${workspaceFolder}/schema/opportunity.formql.schema.json",
+  "formql.baseTable": "opportunity"
+}

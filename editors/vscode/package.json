@@ -1,0 +1,83 @@
+{
+  "name": "formql-vscode",
+  "displayName": "FormQL",
+  "description": "VS Code language support for FormQL formulas",
+  "version": "0.1.0",
+  "publisher": "skamensky",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "onLanguage:formql",
+    "onCommand:formql.restartLanguageServer"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "formql",
+        "aliases": [
+          "FormQL",
+          "formql"
+        ],
+        "extensions": [
+          ".formql"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "formql",
+        "scopeName": "source.formql",
+        "path": "./syntaxes/formql.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "formql.restartLanguageServer",
+        "title": "FormQL: Restart Language Server"
+      }
+    ],
+    "configuration": {
+      "title": "FormQL",
+      "properties": {
+        "formql.serverPath": {
+          "type": "string",
+          "default": "formqlc",
+          "description": "Path to the FormQL compiler executable. Use `go` together with `formql.serverArgs` when running the server via `go run`."
+        },
+        "formql.serverArgs": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Arguments prepended before `lsp`. Example: `[\"run\", \"${workspaceFolder}/cmd/formqlc\"]`."
+        },
+        "formql.schemaPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to an offline FormQL schema JSON file. This is the recommended editor mode because definitions can jump to the schema file."
+        },
+        "formql.databaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "PostgreSQL connection string for live catalog mode."
+        },
+        "formql.baseTable": {
+          "type": "string",
+          "default": "",
+          "description": "Base table for the current FormQL workspace. Required in live DB mode."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}

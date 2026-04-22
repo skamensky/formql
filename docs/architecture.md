@@ -2,7 +2,7 @@
 
 This repo is the authoritative FormQL implementation.
 
-An earlier JavaScript project exists as inspiration only. It is not the specification, and behavior should not be copied forward automatically just because it existed there.
+An earlier prototype exists as inspiration only. It is not the specification, and behavior should not be copied forward automatically just because it existed there.
 
 ## Pipeline
 
@@ -62,20 +62,25 @@ The live catalog loader introspects:
 - direct foreign-key relationships from `information_schema.table_constraints`
 - join index coverage from PostgreSQL index catalogs
 
-Relationship names are normalized from foreign-key columns by stripping `_id`, so `customer_id` becomes `customer` and is used in formulas as `customer_rel`.
+Relationship names are currently derived mechanically from foreign-key column names by stripping suffixes like `_id`.
 
-That is a bootstrap choice, not a language commitment.
+That is an implementation choice, not a language commitment. The long-term traversal surface may be renamed or made more explicit.
 
 ## LSP
 
-The LSP server is intentionally thin.
+The LSP server is intentionally thin in architecture, but now useful enough to drive editor workflows.
 
 - it reloads catalog information from the live database
+- it can also run in offline schema mode from a checked-in schema JSON file
 - it typechecks documents by calling the same compiler modules as the CLI
 - it publishes parser/typechecker errors and warning diagnostics
-- it serves basic completions for columns, relationships, and functions
+- it serves completions for columns, relationships, and functions
+- it serves hover information for columns and relationships
+- it serves definition requests for schema-backed symbols when a schema file is available
 
 That is the modularity test: editor features are consumers of the compiler, not a parallel implementation.
+
+The repo also includes a VS Code client in [`editors/vscode`](../editors/vscode/package.json) and bundled example workspaces in [`examples/workspaces/offline-rental-offer`](../examples/workspaces/offline-rental-offer/README.md), [`examples/workspaces/offline-rental-contract`](../examples/workspaces/offline-rental-contract/README.md), and [`examples/workspaces/offline-resale-sale`](../examples/workspaces/offline-resale-sale/README.md).
 
 ## Developer Workflow
 
@@ -88,23 +93,23 @@ make db-up
 Inspect the live catalog:
 
 ```bash
-make catalog BASE_TABLE=opportunity
+make catalog BASE_TABLE=rental_contract
 ```
 
 Typecheck a formula against the live database:
 
 ```bash
-make typecheck BASE_TABLE=opportunity FORMULA='IF(customer_rel.email = NULL, "missing", "ok")'
+make typecheck BASE_TABLE=rental_contract FORMULA='rep_rel.manager_rel.first_name & " @ " & rep_rel.branch_rel.name'
 ```
 
 Generate PostgreSQL SQL:
 
 ```bash
-make query BASE_TABLE=opportunity FORMULA='IF(amount > 100, customer_rel.first_name, "low")'
+make query BASE_TABLE=resale_sale FORMULA='vehicle_rel.model_name & " / " & STRING(vehicle_rel.model_year)'
 ```
 
 Run the language server:
 
 ```bash
-make lsp BASE_TABLE=opportunity
+make lsp BASE_TABLE=rental_contract
 ```

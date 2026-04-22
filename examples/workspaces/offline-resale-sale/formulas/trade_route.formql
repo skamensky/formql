@@ -1,0 +1,1 @@
+IF(buyer_type != "fleet-transfer", "consumer", "fleet")

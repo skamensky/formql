@@ -1,0 +1,1 @@
+IF(actual_days <= 3, "short-haul", "standard")

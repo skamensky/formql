@@ -1,0 +1,1 @@
+ROUND(offer_rel.quoted_daily_rate * offer_rel.quoted_days, 2)

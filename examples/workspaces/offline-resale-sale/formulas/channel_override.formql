@@ -1,0 +1,1 @@
+IF(vendor_rel.category <> "auction", "direct", "auction")

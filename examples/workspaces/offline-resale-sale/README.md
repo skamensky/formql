@@ -1,0 +1,32 @@
+# Offline Resale Sale Workspace
+
+This workspace reuses the same rental-agency schema but switches the base table to used-vehicle resale. It is the quickest way to test FormQL against a different slice of the same domain model and confirm that the compiler is not hard-wired to one base table.
+
+## Open in VS Code
+
+Open this folder directly:
+
+```bash
+code /home/shmuel/repos/shkamensky/formql/examples/workspaces/offline-resale-sale
+```
+
+The workspace points the FormQL extension at:
+
+- the local compiler via `go run`
+- the shared rental-agency schema in `examples/catalogs`
+- the `resale_sale` base table
+
+Open any file under `formulas/` to test:
+
+- buyer-channel formulas that mix retail, wholesale, and repeat-renter logic
+- vehicle lineage paths through purchase and vendor relationships
+- explicit `STRING(...)` casting inside string concatenation
+
+## Feature Coverage
+
+This workspace complements the contract workspace with resale-specific language coverage:
+
+- alternate inequality spellings: `channel_override.formql`, `trade_route.formql`
+- date casting and date arithmetic: `days_to_year_end.formql`, `warranty_window_days.formql`
+- absolute deltas and margin logic: `margin_gap_abs.formql`, `margin_band.formql`
+- warning-path traversal through manager relationships: `manager_line.formql`

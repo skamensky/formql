@@ -66,7 +66,7 @@ func (l *lexer) skipBlockComment() error {
 		}
 		l.advance()
 	}
-	return diagnostic.New("lexer", "unterminated block comment", l.pos)
+	return diagnostic.NewError("lexer", "unterminated_block_comment", "unterminated block comment", "close the comment with '*/'", l.pos)
 }
 
 func isDigit(ch byte) bool {
@@ -131,7 +131,7 @@ func (l *lexer) readString() (token.Token, error) {
 	}
 
 	if l.ch == 0 {
-		return token.Token{}, diagnostic.New("lexer", "unterminated string literal", start)
+		return token.Token{}, diagnostic.NewError("lexer", "unterminated_string_literal", "unterminated string literal", "close the string with a double quote", start)
 	}
 
 	l.advance()
@@ -229,9 +229,9 @@ func (l *lexer) nextToken() (token.Token, error) {
 				l.advance()
 				return token.Token{Type: token.NEQ, Literal: "!=", Position: current}, nil
 			}
-			return token.Token{}, diagnostic.New("lexer", "unexpected '!': did you mean '!='?", current)
+			return token.Token{}, diagnostic.NewError("lexer", "unexpected_bang", "unexpected '!'", "use '!=' for inequality", current)
 		default:
-			return token.Token{}, diagnostic.New("lexer", "unexpected character "+string(l.ch), current)
+			return token.Token{}, diagnostic.NewError("lexer", "unexpected_character", "unexpected character "+string(l.ch), "remove the character or replace it with a valid operator or identifier", current)
 		}
 	}
 

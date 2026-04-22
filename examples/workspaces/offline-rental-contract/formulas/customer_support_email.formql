@@ -1,0 +1,1 @@
+LOWER(COALESCE(customer_rel.email, rep_rel.email, vehicle_rel.vendor_rel.support_email))

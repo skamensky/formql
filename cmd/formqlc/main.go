@@ -160,25 +160,23 @@ func runCatalog(args []string) error {
 func runLSP(args []string) error {
 	fs := flag.NewFlagSet("lsp", flag.ContinueOnError)
 	databaseURL := fs.String("database-url", envOr("FORMULA_DATABASE_URL", envOr("DATABASE_URL", "")), "postgres connection string")
+	schemaPath := fs.String("schema", "", "path to schema json")
 	table := fs.String("table", envOr("FORMULA_BASE_TABLE", ""), "base table")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *databaseURL == "" {
-		return fmt.Errorf("lsp requires -database-url or FORMULA_DATABASE_URL")
-	}
-	if *table == "" {
-		return fmt.Errorf("lsp requires -table or FORMULA_BASE_TABLE")
-	}
 
 	ctx := context.Background()
-	provider, err := livecatalog.NewPostgresProvider(ctx, *databaseURL)
+	provider, err := loadLSPProvider(ctx, *databaseURL, *schemaPath, *table)
 	if err != nil {
 		return err
 	}
 	defer provider.Close()
 
-	server := lsp.NewServer(os.Stdin, os.Stdout, provider, *table)
+	server := lsp.NewServer(os.Stdin, os.Stdout, provider, lsp.Config{
+		BaseTable:  *table,
+		SchemaPath: *schemaPath,
+	})
 	return server.Run(ctx)
 }
 
@@ -258,4 +256,44 @@ func envOr(name, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+type staticCatalogProvider struct {
+	catalog *schema.Catalog
+}
+
+func (p *staticCatalogProvider) LoadCatalog(_ context.Context, _ string) (*schema.Catalog, error) {
+	return p.catalog, nil
+}
+
+func (p *staticCatalogProvider) Close() {}
+
+func loadLSPProvider(ctx context.Context, databaseURL, schemaPath, table string) (livecatalog.Provider, error) {
+	if schemaPath != "" {
+		file, err := os.ReadFile(schemaPath)
+		if err != nil {
+			return nil, err
+		}
+
+		var catalog schema.Catalog
+		if err := json.Unmarshal(file, &catalog); err != nil {
+			return nil, err
+		}
+		if table != "" {
+			catalog.BaseTable = table
+		}
+		if err := catalog.Validate(); err != nil {
+			return nil, err
+		}
+		return &staticCatalogProvider{catalog: &catalog}, nil
+	}
+
+	if databaseURL == "" {
+		return nil, fmt.Errorf("lsp requires either -schema or -database-url")
+	}
+	if table == "" {
+		return nil, fmt.Errorf("lsp requires -table when using a live database")
+	}
+
+	return livecatalog.NewPostgresProvider(ctx, databaseURL)
 }

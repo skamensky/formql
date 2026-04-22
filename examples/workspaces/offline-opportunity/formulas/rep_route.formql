@@ -1,0 +1,1 @@
+IF(offer_amount > 500000, customer_rel.assigned_rep_rel.name, "self-serve")

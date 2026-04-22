@@ -1,0 +1,9 @@
+{
+  "formql.serverPath": "go",
+  "formql.serverArgs": [
+    "run",
+    "${workspaceFolder}/../../../cmd/formqlc"
+  ],
+  "formql.schemaPath": "${workspaceFolder}/../../catalogs/rental-agency.formql.schema.json",
+  "formql.baseTable": "rental_offer"
+}

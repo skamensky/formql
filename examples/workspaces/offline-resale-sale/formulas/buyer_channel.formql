@@ -1,0 +1,1 @@
+IF(customer_rel.repeat_customer = TRUE, "loyal-renter", IF(vendor_rel.category = "auction", "wholesale", "retail"))

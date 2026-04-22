@@ -1,8 +1,11 @@
 DATABASE_URL ?= postgres://formula:formula@localhost:54329/formula?sslmode=disable
-BASE_TABLE ?= opportunity
-FORMULA ?= IF(customer_rel.email = NULL, "missing", "ok")
+BASE_TABLE ?= rental_contract
+FORMULA ?= rep_rel.manager_rel.first_name & " @ " & rep_rel.branch_rel.name
+SCHEMA_PATH ?= examples/catalogs/rental-agency.formql.schema.json
+VSCODE_EXTENSION_DIR ?= editors/vscode
+VSCODE_EXTENSION_VSIX ?= $(VSCODE_EXTENSION_DIR)/formql-vscode-0.1.0.vsix
 
-.PHONY: go-test db-up db-down db-reset catalog ast hir typecheck query lsp
+.PHONY: go-test db-up db-down db-reset catalog ast hir typecheck query lsp lsp-offline typecheck-offline vscode-extension-package vscode-extension-install vscode-extension-reinstall
 
 go-test:
 	go test ./...
@@ -34,3 +37,17 @@ query:
 
 lsp:
 	go run ./cmd/formqlc lsp -database-url "$(DATABASE_URL)" -table "$(BASE_TABLE)"
+
+lsp-offline:
+	go run ./cmd/formqlc lsp -schema "$(SCHEMA_PATH)" -table "$(BASE_TABLE)"
+
+typecheck-offline:
+	go run ./cmd/formqlc typecheck -schema "$(SCHEMA_PATH)" -table "$(BASE_TABLE)" -formula '$(FORMULA)'
+
+vscode-extension-package:
+	cd "$(VSCODE_EXTENSION_DIR)" && npx @vscode/vsce package
+
+vscode-extension-install:
+	code --install-extension "$(VSCODE_EXTENSION_VSIX)" --force
+
+vscode-extension-reinstall: vscode-extension-package vscode-extension-install
