@@ -40,11 +40,11 @@ static bool verify_sql_syntax(const char *sql, VerifyFailure *failure) {
 static Datum diagnostics_jsonb_datum(const VerifyFailure *failure) {
 	StringInfoData json;
 	initStringInfo(&json);
-	appendStringInfoString(&json, "{\"ok\":false,\"diagnostics\":[{\"message\":\"");
+	appendStringInfoString(&json, "{\"ok\":false,\"diagnostics\":[{\"message\":");
 	escape_json(&json, failure->message);
-	appendStringInfoString(&json, "\",\"sqlstate\":\"");
+	appendStringInfoString(&json, ",\"sqlstate\":");
 	escape_json(&json, failure->sqlstate);
-	appendStringInfoString(&json, "\"}]}");
+	appendStringInfoString(&json, "}]}");
 	return DirectFunctionCall1(jsonb_in, CStringGetDatum(json.data));
 }
 
