@@ -1,0 +1,4 @@
+comment = 'FormQL SQL verification helpers'
+default_version = '0.1.0'
+relocatable = true
+module_pathname = '$libdir/formql'
