@@ -113,3 +113,167 @@ Run the language server:
 ```bash
 make lsp BASE_TABLE=rental_contract
 ```
+
+## Verification Architecture (Extension-Ready, Testable in Go)
+
+FormQL verification should work entirely without a running database while still tracking PostgreSQL parser behavior.
+
+To keep extension work testable and independent from extension build tooling, verification lives behind a small interface contract in [`pkg/formql/verify`](../pkg/formql/verify/verify.go).
+
+### Contract
+
+- `verify.Verifier`: stage-level verifier interface
+- `verify.Pipeline`: composition of verifier stages with fail-fast behavior
+- `verify.Request`: SQL + bind args + verification mode
+- `verify.Result`: normalized success + diagnostics output
+
+This means extension-specific code is just one implementation of the verifier interface, not the interface itself.
+
+### Recommended staged rollout
+
+1. Use `go-pgquery` as the default offline verifier stage for parser correctness.
+2. Keep optional extension-backed checks as additional stages, not a requirement for verification.
+3. Keep any custom lints/policy checks advisory, never correctness-authoritative.
+4. Compose stages with `verify.Pipeline` so the same test corpus runs in CI and extension environments.
+
+### Correctness stance
+
+Verification correctness is defined by PostgreSQL itself.
+
+- Do **not** implement a separate SQL parser as the source of truth in FormQL.
+- For offline syntax/analysis checks, delegate to `go-pgquery` (libpg_query via pure-Go runtime).
+- A running PostgreSQL instance is optional for additional runtime checks, not required for baseline verification.
+- Any FormQL-specific lint or policy pass must remain advisory over parser validity.
+
+## Proposed PostgreSQL Extension (Design Only, Not Implemented)
+
+This section defines a first-pass contract for the extension work. It is
+intentionally design-only and does not introduce extension code yet.
+
+### API surface
+
+Expose a small SQL API from the extension so app code and tests use a stable contract:
+
+- `formql_verify_sql(sql text) returns jsonb`
+  - parser-only verification response
+  - returns `{ ok: bool, diagnostics: [{code, message, detail?, hint?, position?}] }`
+- `formql_verify_expression(base_table text, formula text) returns jsonb`
+  - runs FormQL-to-SQL compilation externally, then verifies generated SQL in-db
+  - same response shape
+- `formql_version() returns text`
+  - extension version + parser compatibility marker
+
+Design notes:
+
+- diagnostics are normalized JSON so Go/CLI/LSP surfaces can consume one shape
+- no execution endpoint in v1 (verification only)
+- if planning-level checks are added later, expose a mode argument rather than a separate function
+
+### Build strategy
+
+Use a split build so extension specifics stay isolated and testable:
+
+1. Keep shared verification contract and fixtures in Go (`pkg/formql/verify`).
+2. Build extension as a thin adapter layer that maps SQL calls to parser/verification engine.
+3. Prefer PGXS-based extension packaging (`Makefile`, `.control`, `--*.sql`) for compatibility.
+4. Keep CI matrix with:
+   - Go unit tests (no Postgres required)
+   - extension build checks against targeted PostgreSQL majors
+   - extension integration tests in containers
+
+### Test strategy
+
+Adopt the same fixture corpus in every layer:
+
+- **Contract tests (Go, offline):** expected diagnostics for valid/invalid SQL.
+- **Golden tests (compiler):** formula -> SQL output snapshots.
+- **Extension integration tests:** call `formql_verify_sql` against the same SQL fixtures and assert parity with offline verifier for parser outcomes.
+- **Upgrade tests:** install old extension version, upgrade, and verify API compatibility.
+
+Minimum gating policy for the extension phase:
+
+- no merge unless fixture parity passes (offline verifier vs extension verifier)
+- no merge unless extension install/upgrade scripts pass on every supported PG major
+
+
+### Return contract proposal (no JSON parsing required)
+
+To keep the SQL-callsite simple, use a scalar-first API and make JSON optional:
+
+- `formql_verify_sql_error(sql text) returns text`
+  - `NULL` means verification passed
+  - non-`NULL` means verification failed and contains a user-readable error summary
+- `formql_verify_sql_ok(sql text) returns boolean`
+  - `TRUE` when verification passed
+  - `FALSE` when verification failed
+- optional advanced API: `formql_verify_sql_diagnostics(sql text) returns jsonb`
+  - full diagnostics only for callers that need machine-readable details
+
+This gives developers a no-JSON happy path while still supporting rich diagnostics.
+
+### E2E Docker testing requirement (extension build + runtime)
+
+Extension work should not merge without an end-to-end Docker job that:
+
+1. builds a PostgreSQL image with the FormQL extension installed
+2. starts a container from that image
+3. runs SQL assertions against extension functions (`*_ok`, `*_error`, optional `*_diagnostics`)
+4. validates contract behavior:
+   - valid SQL -> `*_error IS NULL` and `*_ok = TRUE`
+   - invalid SQL -> `*_error IS NOT NULL` and `*_ok = FALSE`
+
+Recommended repo layout for this phase:
+
+```text
+docker/
+  extension/
+    Dockerfile           # PostgreSQL + built/installed extension
+    smoke.sql            # E2E SQL assertions
+
+ext/formql/
+  Makefile
+  formql.control
+  sql/
+  src/
+```
+
+Recommended make targets:
+
+- `make ext-build`       (build extension artifacts)
+- `make ext-docker-build` (build image with extension)
+- `make ext-e2e`         (run smoke SQL in container)
+
+### File hierarchy (proposed)
+
+```text
+ext/
+  formql/
+    Makefile
+    formql.control
+    sql/
+      formql--0.1.0.sql
+      formql--0.1.0--0.1.1.sql
+    src/
+      formql.c                 # SQL-callable entrypoints
+      verify_bridge.c          # bridge to verification engine
+    test/
+      sql/
+      expected/
+
+testdata/
+  verify/
+    valid.sql
+    invalid.sql
+    diagnostics/*.json
+
+pkg/formql/verify/
+  verify.go                    # shared request/result contract
+  pipeline.go (optional split)
+  pgquery.go                   # offline parser verifier
+```
+
+Rationale:
+
+- keeps extension mechanics isolated under `ext/`
+- keeps reusable fixtures in repository-level `testdata/verify`
+- keeps Go-first contract and offline tests independent from extension toolchain
