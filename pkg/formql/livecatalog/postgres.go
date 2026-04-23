@@ -3,24 +3,118 @@ package livecatalog
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 
+	"github.com/skamensky/formql/pkg/formql/catalog"
 	"github.com/skamensky/formql/pkg/formql/schema"
 
 	_ "github.com/lib/pq"
 )
 
-// Provider loads formula catalogs from a live database.
-type Provider interface {
-	LoadCatalog(ctx context.Context, baseTable string) (*schema.Catalog, error)
-	Close()
+// Source provides the raw catalog material needed to build a compiler catalog.
+//
+// External processes can implement this with database/sql over a connection
+// string. In-server environments such as a PostgreSQL extension can implement
+// the same contract through SPI or direct catalog access without any transport
+// URL at all.
+type Source interface {
+	Tables(ctx context.Context, namespace string) ([]schema.Table, error)
+	Relationships(ctx context.Context, namespace string) ([]schema.Relationship, error)
 }
 
-// PostgresProvider introspects a PostgreSQL schema into a formula catalog.
-type PostgresProvider struct {
+// ColumnRecord is raw column metadata captured from PostgreSQL introspection.
+type ColumnRecord struct {
+	TableName  string `json:"table_name"`
+	ColumnName string `json:"column_name"`
+	DataType   string `json:"data_type"`
+	UDTName    string `json:"udt_name,omitempty"`
+}
+
+// RelationshipRecord is raw foreign-key metadata captured from PostgreSQL introspection.
+type RelationshipRecord struct {
+	SourceTable         string `json:"source_table"`
+	SourceColumn        string `json:"source_column"`
+	TargetTable         string `json:"target_table"`
+	TargetColumn        string `json:"target_column"`
+	JoinColumnIndexed   bool   `json:"join_column_indexed"`
+	TargetColumnIndexed bool   `json:"target_column_indexed"`
+}
+
+// IntrospectionSnapshot is a host-facing raw metadata payload.
+type IntrospectionSnapshot struct {
+	Namespace     string               `json:"namespace,omitempty"`
+	BaseTable     string               `json:"base_table"`
+	Columns       []ColumnRecord       `json:"columns"`
+	Relationships []RelationshipRecord `json:"relationships"`
+}
+
+// BuildSnapshot materializes a validated compiler catalog snapshot from a live source.
+func BuildSnapshot(ctx context.Context, source Source, ref catalog.Ref) (*catalog.Snapshot, error) {
+	namespace, baseTable := resolveRef(ref, "public")
+
+	tables, err := source.Tables(ctx, namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	relationships, err := source.Relationships(ctx, namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	compilationCatalog := &schema.Catalog{
+		BaseTable:     strings.ToLower(strings.TrimSpace(baseTable)),
+		Tables:        tables,
+		Relationships: relationships,
+	}
+
+	if err := compilationCatalog.Validate(); err != nil {
+		return nil, err
+	}
+
+	return &catalog.Snapshot{
+		Catalog:  compilationCatalog,
+		Revision: namespace,
+	}, nil
+}
+
+// SnapshotFromIntrospection converts raw host metadata into a compiler snapshot.
+func SnapshotFromIntrospection(payload IntrospectionSnapshot) (*catalog.Snapshot, error) {
+	compilationCatalog := &schema.Catalog{
+		BaseTable:     strings.ToLower(strings.TrimSpace(payload.BaseTable)),
+		Tables:        tablesFromColumnRecords(payload.Columns),
+		Relationships: relationshipsFromRecords(payload.Relationships),
+	}
+	if err := compilationCatalog.Validate(); err != nil {
+		return nil, err
+	}
+	return &catalog.Snapshot{
+		Catalog:  compilationCatalog,
+		Revision: strings.ToLower(strings.TrimSpace(payload.Namespace)),
+	}, nil
+}
+
+// SnapshotFromIntrospectionJSON decodes raw host metadata and builds a compiler snapshot.
+func SnapshotFromIntrospectionJSON(data []byte) (*catalog.Snapshot, error) {
+	var payload IntrospectionSnapshot
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, fmt.Errorf("decode introspection json: %w", err)
+	}
+	return SnapshotFromIntrospection(payload)
+}
+
+// PostgresSource introspects a PostgreSQL schema into raw catalog material.
+type PostgresSource struct {
 	db         *sql.DB
 	schemaName string
+}
+
+// PostgresProvider loads a compiler catalog from a Postgres-backed source.
+type PostgresProvider struct {
+	source *PostgresSource
+	db     *sql.DB
 }
 
 // NewPostgresProvider creates a Postgres-backed catalog provider.
@@ -36,8 +130,11 @@ func NewPostgresProvider(ctx context.Context, databaseURL string) (*PostgresProv
 	}
 
 	return &PostgresProvider{
-		db:         db,
-		schemaName: "public",
+		source: &PostgresSource{
+			db:         db,
+			schemaName: "public",
+		},
+		db: db,
 	}, nil
 }
 
@@ -49,32 +146,13 @@ func (p *PostgresProvider) Close() {
 	_ = p.db.Close()
 }
 
-// LoadCatalog introspects a live schema for compiler use.
-func (p *PostgresProvider) LoadCatalog(ctx context.Context, baseTable string) (*schema.Catalog, error) {
-	tables, err := p.loadTables(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	relationships, err := p.loadRelationships(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	catalog := &schema.Catalog{
-		BaseTable:     strings.ToLower(strings.TrimSpace(baseTable)),
-		Tables:        tables,
-		Relationships: relationships,
-	}
-
-	if err := catalog.Validate(); err != nil {
-		return nil, err
-	}
-
-	return catalog, nil
+// Load introspects a live schema snapshot for compiler or tooling use.
+func (p *PostgresProvider) Load(ctx context.Context, ref catalog.Ref) (*catalog.Snapshot, error) {
+	return BuildSnapshot(ctx, p.source, ref)
 }
 
-func (p *PostgresProvider) loadTables(ctx context.Context) ([]schema.Table, error) {
+// Tables loads table and column metadata from PostgreSQL.
+func (s *PostgresSource) Tables(ctx context.Context, namespace string) ([]schema.Table, error) {
 	const query = `
 		SELECT table_name, column_name, data_type, udt_name
 		FROM information_schema.columns
@@ -82,14 +160,13 @@ func (p *PostgresProvider) loadTables(ctx context.Context) ([]schema.Table, erro
 		ORDER BY table_name, ordinal_position
 	`
 
-	rows, err := p.db.QueryContext(ctx, query, p.schemaName)
+	rows, err := s.db.QueryContext(ctx, query, schemaName(namespace, s.schemaName))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	orderedNames := make([]string, 0)
-	tableColumns := make(map[string][]schema.Column)
+	columnRecords := make([]ColumnRecord, 0)
 
 	for rows.Next() {
 		var tableName string
@@ -100,14 +177,11 @@ func (p *PostgresProvider) loadTables(ctx context.Context) ([]schema.Table, erro
 			return nil, err
 		}
 
-		normalizedTable := strings.ToLower(tableName)
-		if _, ok := tableColumns[normalizedTable]; !ok {
-			orderedNames = append(orderedNames, normalizedTable)
-		}
-
-		tableColumns[normalizedTable] = append(tableColumns[normalizedTable], schema.Column{
-			Name: strings.ToLower(columnName),
-			Type: mapPostgresType(dataType, udtName),
+		columnRecords = append(columnRecords, ColumnRecord{
+			TableName:  strings.ToLower(tableName),
+			ColumnName: strings.ToLower(columnName),
+			DataType:   strings.ToLower(dataType),
+			UDTName:    strings.ToLower(udtName),
 		})
 	}
 
@@ -115,18 +189,11 @@ func (p *PostgresProvider) loadTables(ctx context.Context) ([]schema.Table, erro
 		return nil, rows.Err()
 	}
 
-	tables := make([]schema.Table, 0, len(orderedNames))
-	for _, tableName := range orderedNames {
-		tables = append(tables, schema.Table{
-			Name:    tableName,
-			Columns: tableColumns[tableName],
-		})
-	}
-
-	return tables, nil
+	return tablesFromColumnRecords(columnRecords), nil
 }
 
-func (p *PostgresProvider) loadRelationships(ctx context.Context) ([]schema.Relationship, error) {
+// Relationships loads relationship and index metadata from PostgreSQL.
+func (s *PostgresSource) Relationships(ctx context.Context, namespace string) ([]schema.Relationship, error) {
 	const query = `
 		SELECT
 			tc.table_name AS source_table,
@@ -167,13 +234,13 @@ func (p *PostgresProvider) loadRelationships(ctx context.Context) ([]schema.Rela
 		ORDER BY source_table, source_column
 	`
 
-	rows, err := p.db.QueryContext(ctx, query, p.schemaName)
+	rows, err := s.db.QueryContext(ctx, query, schemaName(namespace, s.schemaName))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	relationships := make([]schema.Relationship, 0)
+	records := make([]RelationshipRecord, 0)
 	for rows.Next() {
 		var sourceTable string
 		var sourceColumn string
@@ -192,14 +259,13 @@ func (p *PostgresProvider) loadRelationships(ctx context.Context) ([]schema.Rela
 			return nil, err
 		}
 
-		relationships = append(relationships, schema.Relationship{
-			Name:                relationshipNameForColumn(sourceColumn),
-			FromTable:           strings.ToLower(sourceTable),
-			ToTable:             strings.ToLower(targetTable),
-			JoinColumn:          strings.ToLower(sourceColumn),
+		records = append(records, RelationshipRecord{
+			SourceTable:         strings.ToLower(sourceTable),
+			SourceColumn:        strings.ToLower(sourceColumn),
+			TargetTable:         strings.ToLower(targetTable),
 			TargetColumn:        strings.ToLower(targetColumn),
-			JoinColumnIndexed:   boolPtr(sourceIndexed),
-			TargetColumnIndexed: boolPtr(targetIndexed),
+			JoinColumnIndexed:   sourceIndexed,
+			TargetColumnIndexed: targetIndexed,
 		})
 	}
 
@@ -207,7 +273,7 @@ func (p *PostgresProvider) loadRelationships(ctx context.Context) ([]schema.Rela
 		return nil, rows.Err()
 	}
 
-	return relationships, nil
+	return relationshipsFromRecords(records), nil
 }
 
 func relationshipNameForColumn(columnName string) string {
@@ -237,6 +303,46 @@ func boolPtr(value bool) *bool {
 	return &value
 }
 
+func tablesFromColumnRecords(records []ColumnRecord) []schema.Table {
+	orderedNames := make([]string, 0)
+	tableColumns := make(map[string][]schema.Column)
+	for _, record := range records {
+		tableName := strings.ToLower(strings.TrimSpace(record.TableName))
+		if _, ok := tableColumns[tableName]; !ok {
+			orderedNames = append(orderedNames, tableName)
+		}
+		tableColumns[tableName] = append(tableColumns[tableName], schema.Column{
+			Name: strings.ToLower(strings.TrimSpace(record.ColumnName)),
+			Type: mapPostgresType(record.DataType, record.UDTName),
+		})
+	}
+
+	tables := make([]schema.Table, 0, len(orderedNames))
+	for _, tableName := range orderedNames {
+		tables = append(tables, schema.Table{
+			Name:    tableName,
+			Columns: tableColumns[tableName],
+		})
+	}
+	return tables
+}
+
+func relationshipsFromRecords(records []RelationshipRecord) []schema.Relationship {
+	relationships := make([]schema.Relationship, 0, len(records))
+	for _, record := range records {
+		relationships = append(relationships, schema.Relationship{
+			Name:                relationshipNameForColumn(record.SourceColumn),
+			FromTable:           strings.ToLower(strings.TrimSpace(record.SourceTable)),
+			ToTable:             strings.ToLower(strings.TrimSpace(record.TargetTable)),
+			JoinColumn:          strings.ToLower(strings.TrimSpace(record.SourceColumn)),
+			TargetColumn:        strings.ToLower(strings.TrimSpace(record.TargetColumn)),
+			JoinColumnIndexed:   boolPtr(record.JoinColumnIndexed),
+			TargetColumnIndexed: boolPtr(record.TargetColumnIndexed),
+		})
+	}
+	return relationships
+}
+
 // LoadCatalog is a helper for one-shot introspection without keeping a provider around.
 func LoadCatalog(ctx context.Context, databaseURL, baseTable string) (*schema.Catalog, error) {
 	provider, err := NewPostgresProvider(ctx, databaseURL)
@@ -245,9 +351,32 @@ func LoadCatalog(ctx context.Context, databaseURL, baseTable string) (*schema.Ca
 	}
 	defer provider.Close()
 
-	catalog, err := provider.LoadCatalog(ctx, baseTable)
+	snapshot, err := provider.Load(ctx, catalog.Ref{BaseTable: baseTable})
 	if err != nil {
 		return nil, fmt.Errorf("load catalog: %w", err)
 	}
-	return catalog, nil
+	return snapshot.Catalog, nil
+}
+
+func resolveRef(ref catalog.Ref, fallbackNamespace string) (string, string) {
+	namespace := strings.ToLower(strings.TrimSpace(ref.Namespace))
+	baseTable := strings.ToLower(strings.TrimSpace(ref.BaseTable))
+	if strings.Contains(baseTable, ".") {
+		parts := strings.SplitN(baseTable, ".", 2)
+		if namespace == "" {
+			namespace = strings.TrimSpace(parts[0])
+		}
+		baseTable = strings.TrimSpace(parts[1])
+	}
+	if namespace == "" {
+		namespace = fallbackNamespace
+	}
+	return namespace, baseTable
+}
+
+func schemaName(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }

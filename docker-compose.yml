@@ -28,6 +28,7 @@ services:
       POSTGRES_USER: formula
       POSTGRES_PASSWORD: formula
       POSTGRES_DB: formula
+      GLIBC_TUNABLES: glibc.rtld.optional_static_tls=2048
     ports:
       - "54330:5432"
     healthcheck:

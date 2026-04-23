@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FormQL WASM Playground</title>
+    <style>
+      :root {
+        --bg: #f6efe3;
+        --ink: #1d2521;
+        --muted: #65736d;
+        --panel: #fffaf1;
+        --line: #d8c8ad;
+        --accent: #0f766e;
+        --accent-dark: #0b514c;
+        --bad: #9f1239;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at top left, rgba(15, 118, 110, 0.18), transparent 34rem),
+          linear-gradient(135deg, #f8f0df, var(--bg));
+        color: var(--ink);
+        font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+      }
+
+      main {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 3rem 1.25rem;
+      }
+
+      h1 {
+        margin: 0 0 0.5rem;
+        font-size: clamp(2.4rem, 6vw, 5rem);
+        letter-spacing: -0.06em;
+      }
+
+      p {
+        color: var(--muted);
+        font-size: 1.08rem;
+        line-height: 1.6;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 1rem;
+        margin-top: 2rem;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 1.25rem;
+        background: color-mix(in srgb, var(--panel) 86%, white);
+        box-shadow: 0 24px 80px rgba(40, 31, 18, 0.12);
+        padding: 1rem;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 0.45rem;
+        color: var(--muted);
+        font-size: 0.82rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      textarea,
+      pre {
+        box-sizing: border-box;
+        width: 100%;
+        min-height: 15rem;
+        margin: 0;
+        border: 1px solid var(--line);
+        border-radius: 0.9rem;
+        background: #fffdf8;
+        color: var(--ink);
+        font: 0.95rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        padding: 1rem;
+        overflow: auto;
+      }
+
+      button {
+        margin-top: 1rem;
+        border: 0;
+        border-radius: 999px;
+        background: var(--accent);
+        color: white;
+        cursor: pointer;
+        font-weight: 700;
+        padding: 0.8rem 1.2rem;
+      }
+
+      button:hover {
+        background: var(--accent-dark);
+      }
+
+      .status {
+        margin-top: 0.75rem;
+        min-height: 1.5rem;
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      .status.error {
+        color: var(--bad);
+      }
+
+      @media (max-width: 760px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>FormQL WASM</h1>
+      <p>
+        This page compiles FormQL in the browser through the Go wasm bundle,
+        then sends the generated SQL to the local backend verifier.
+      </p>
+
+      <section class="grid">
+        <div class="panel">
+          <label for="formula">Formula</label>
+          <textarea id="formula">customer_rel.email & " / " & STRING(actual_total)</textarea>
+          <button id="run">Compile in WASM + Verify Online</button>
+          <div id="status" class="status">loading wasm...</div>
+        </div>
+        <div class="panel">
+          <label for="output">Result</label>
+          <pre id="output">{}</pre>
+        </div>
+      </section>
+    </main>
+
+    <script src="/wasm/wasm_exec.js"></script>
+    <script>
+      const state = {
+        catalog: null,
+        ready: false,
+      };
+
+      const status = document.getElementById("status");
+      const output = document.getElementById("output");
+      const formula = document.getElementById("formula");
+      const run = document.getElementById("run");
+
+      function setStatus(message, isError = false) {
+        status.textContent = message;
+        status.classList.toggle("error", isError);
+      }
+
+      async function init() {
+        const go = new Go();
+        const wasm = await WebAssembly.instantiateStreaming(fetch("/wasm/formql.wasm"), go.importObject);
+        go.run(wasm.instance);
+
+        const catalogResponse = await fetch("/api/catalog/rental-agency");
+        state.catalog = await catalogResponse.json();
+        state.ready = true;
+        setStatus("ready");
+      }
+
+      async function compileAndVerify() {
+        if (!state.ready) {
+          setStatus("wasm is still loading", true);
+          return;
+        }
+
+        const compiled = FormQL.compileCatalogJSON(state.catalog, formula.value, {
+          baseTable: "rental_contract",
+          fieldAlias: "result",
+        });
+        if (!compiled.ok) {
+          output.textContent = JSON.stringify(compiled, null, 2);
+          setStatus(compiled.error.message, true);
+          return;
+        }
+
+        const verifyResponse = await fetch("/api/verify-sql", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sql: compiled.compilation.sql.query,
+            verify_mode: "syntax",
+          }),
+        });
+        const verified = await verifyResponse.json();
+        const combined = { compiled, online_verification: verified };
+        output.textContent = JSON.stringify(combined, null, 2);
+        setStatus(verified.verification?.ok ? "online verification passed" : "online verification failed", !verified.verification?.ok);
+      }
+
+      run.addEventListener("click", () => {
+        compileAndVerify().catch((error) => {
+          setStatus(error.message, true);
+          output.textContent = JSON.stringify({ ok: false, error: { message: error.message } }, null, 2);
+        });
+      });
+
+      init().catch((error) => {
+        setStatus(error.message, true);
+      });
+    </script>
+  </body>
+</html>

@@ -24,14 +24,14 @@ type Request struct {
 
 // Diagnostic is a machine-readable verification message.
 type Diagnostic struct {
-	Code    string
-	Message string
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 // Result is the normalized output of any verifier implementation.
 type Result struct {
-	OK          bool
-	Diagnostics []Diagnostic
+	OK          bool         `json:"ok"`
+	Diagnostics []Diagnostic `json:"diagnostics,omitempty"`
 }
 
 // Verifier validates generated SQL before execution.

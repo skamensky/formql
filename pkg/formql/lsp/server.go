@@ -14,8 +14,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/skamensky/formql/pkg/formql"
+	"github.com/skamensky/formql/pkg/formql/catalog"
 	"github.com/skamensky/formql/pkg/formql/diagnostic"
-	"github.com/skamensky/formql/pkg/formql/livecatalog"
 	"github.com/skamensky/formql/pkg/formql/schema"
 )
 
@@ -30,7 +30,7 @@ const (
 type Server struct {
 	in          *bufio.Reader
 	out         io.Writer
-	provider    livecatalog.Provider
+	provider    catalog.Provider
 	baseTable   string
 	docs        map[string]string
 	schemaIndex *schemaFileIndex
@@ -43,7 +43,7 @@ type Config struct {
 }
 
 // NewServer creates a language server instance.
-func NewServer(in io.Reader, out io.Writer, provider livecatalog.Provider, config Config) *Server {
+func NewServer(in io.Reader, out io.Writer, provider catalog.Provider, config Config) *Server {
 	index, _ := loadSchemaFileIndex(config.SchemaPath)
 	return &Server{
 		in:          bufio.NewReader(in),
@@ -312,7 +312,7 @@ func (s *Server) handleCompletion(ctx context.Context, message incomingRPCMessag
 		})
 	}
 
-	catalog, err := s.provider.LoadCatalog(ctx, s.baseTable)
+	snapshot, err := s.provider.Load(ctx, catalog.Ref{BaseTable: s.baseTable})
 	if err != nil {
 		return s.writeMessage(outgoingRPCMessage{
 			JSONRPC: "2.0",
@@ -323,6 +323,7 @@ func (s *Server) handleCompletion(ctx context.Context, message incomingRPCMessag
 			},
 		})
 	}
+	catalog := snapshot.Catalog
 
 	text := s.docs[params.TextDocument.URI]
 	items := completionItems(catalog, effectiveBaseTable(s.baseTable, catalog), text, params.Position)
@@ -346,7 +347,7 @@ func (s *Server) handleDefinition(ctx context.Context, message incomingRPCMessag
 		})
 	}
 
-	catalog, err := s.provider.LoadCatalog(ctx, s.baseTable)
+	snapshot, err := s.provider.Load(ctx, catalog.Ref{BaseTable: s.baseTable})
 	if err != nil {
 		return s.writeMessage(outgoingRPCMessage{
 			JSONRPC: "2.0",
@@ -357,6 +358,7 @@ func (s *Server) handleDefinition(ctx context.Context, message incomingRPCMessag
 			},
 		})
 	}
+	catalog := snapshot.Catalog
 
 	text := s.docs[params.TextDocument.URI]
 	symbol, _, ok := symbolAtPosition(text, params.Position)
@@ -397,7 +399,7 @@ func (s *Server) handleHover(ctx context.Context, message incomingRPCMessage) er
 		})
 	}
 
-	catalog, err := s.provider.LoadCatalog(ctx, s.baseTable)
+	snapshot, err := s.provider.Load(ctx, catalog.Ref{BaseTable: s.baseTable})
 	if err != nil {
 		return s.writeMessage(outgoingRPCMessage{
 			JSONRPC: "2.0",
@@ -408,6 +410,7 @@ func (s *Server) handleHover(ctx context.Context, message incomingRPCMessage) er
 			},
 		})
 	}
+	catalog := snapshot.Catalog
 
 	text := s.docs[params.TextDocument.URI]
 	symbol, symbolRange, ok := symbolAtPosition(text, params.Position)
@@ -459,7 +462,7 @@ func (s *Server) handleDidClose(raw json.RawMessage) error {
 }
 
 func (s *Server) publishDiagnostics(ctx context.Context, uri, text string) error {
-	catalog, err := s.provider.LoadCatalog(ctx, s.baseTable)
+	snapshot, err := s.provider.Load(ctx, catalog.Ref{BaseTable: s.baseTable})
 	if err != nil {
 		diag := []lspDiagnostic{{
 			Range: diagnosticRange{
@@ -480,6 +483,7 @@ func (s *Server) publishDiagnostics(ctx context.Context, uri, text string) error
 			},
 		})
 	}
+	catalog := snapshot.Catalog
 
 	diagnostics := make([]lspDiagnostic, 0, 4)
 	plan, err := formql.Lower(text, catalog)

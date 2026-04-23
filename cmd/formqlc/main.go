@@ -9,9 +9,12 @@ import (
 	"time"
 
 	"github.com/skamensky/formql/pkg/formql"
+	"github.com/skamensky/formql/pkg/formql/api"
+	"github.com/skamensky/formql/pkg/formql/catalog"
 	"github.com/skamensky/formql/pkg/formql/livecatalog"
 	"github.com/skamensky/formql/pkg/formql/lsp"
 	"github.com/skamensky/formql/pkg/formql/schema"
+	"github.com/skamensky/formql/pkg/formql/verify"
 )
 
 func main() {
@@ -27,6 +30,10 @@ func main() {
 		exitIfErr(runHIR(os.Args[2:]))
 	case "query":
 		exitIfErr(runQuery(os.Args[2:]))
+	case "verify-sql":
+		exitIfErr(runVerifySQL(os.Args[2:]))
+	case "verify-query":
+		exitIfErr(runVerifyQuery(os.Args[2:]))
 	case "typecheck":
 		exitIfErr(runTypecheck(os.Args[2:]))
 	case "catalog":
@@ -40,7 +47,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: formqlc <ast|hir|query|typecheck|catalog|lsp> [flags]")
+	fmt.Fprintln(os.Stderr, "usage: formqlc <ast|hir|query|verify-sql|verify-query|typecheck|catalog|lsp> [flags]")
 }
 
 func runAST(args []string) error {
@@ -133,6 +140,63 @@ func runTypecheck(args []string) error {
 	})
 }
 
+func runVerifySQL(args []string) error {
+	fs := flag.NewFlagSet("verify-sql", flag.ContinueOnError)
+	sqlText := fs.String("sql", "", "sql text")
+	mode := fs.String("mode", string(verify.ModeSyntax), "verification mode")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *sqlText == "" {
+		return fmt.Errorf("verify-sql requires -sql")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	result, err := api.VerifySQL(ctx, *sqlText, verify.Mode(*mode))
+	if err != nil {
+		return err
+	}
+	return writeJSON(result)
+}
+
+func runVerifyQuery(args []string) error {
+	fs := commonFlagSet("verify-query")
+	field := fs.String("field", "result", "output field alias")
+	mode := fs.String("mode", string(verify.ModeSyntax), "verification mode")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	config := extractCommonConfig(fs)
+	catalog, err := loadCatalog(config)
+	if err != nil {
+		return err
+	}
+
+	compilation, err := formql.Compile(config.formulaText, catalog, *field)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	result, err := api.VerifySQL(ctx, compilation.SQL.Query, verify.Mode(*mode))
+	if err != nil {
+		return err
+	}
+
+	return writeJSON(struct {
+		Query        string        `json:"query"`
+		Verification verify.Result `json:"verification"`
+	}{
+		Query:        compilation.SQL.Query,
+		Verification: result,
+	})
+}
+
 func runCatalog(args []string) error {
 	fs := flag.NewFlagSet("catalog", flag.ContinueOnError)
 	databaseURL := fs.String("database-url", envOr("FORMULA_DATABASE_URL", envOr("DATABASE_URL", "")), "postgres connection string")
@@ -214,14 +278,14 @@ func loadCatalog(config commonConfig) (*schema.Catalog, error) {
 		if err != nil {
 			return nil, err
 		}
-		var catalog schema.Catalog
-		if err := json.Unmarshal(file, &catalog); err != nil {
+		catalog, err := api.LoadCatalogJSON(file)
+		if err != nil {
 			return nil, err
 		}
 		if config.table != "" {
 			catalog.BaseTable = config.table
 		}
-		return &catalog, nil
+		return catalog, nil
 	}
 	if config.databaseURL == "" {
 		return nil, fmt.Errorf("provide either -schema or -database-url")
@@ -258,34 +322,28 @@ func envOr(name, fallback string) string {
 	return fallback
 }
 
-type staticCatalogProvider struct {
-	catalog *schema.Catalog
-}
-
-func (p *staticCatalogProvider) LoadCatalog(_ context.Context, _ string) (*schema.Catalog, error) {
-	return p.catalog, nil
-}
-
-func (p *staticCatalogProvider) Close() {}
-
-func loadLSPProvider(ctx context.Context, databaseURL, schemaPath, table string) (livecatalog.Provider, error) {
+func loadLSPProvider(ctx context.Context, databaseURL, schemaPath, table string) (catalog.ManagedProvider, error) {
 	if schemaPath != "" {
 		file, err := os.ReadFile(schemaPath)
 		if err != nil {
 			return nil, err
 		}
 
-		var catalog schema.Catalog
-		if err := json.Unmarshal(file, &catalog); err != nil {
+		var schemaCatalog schema.Catalog
+		if err := json.Unmarshal(file, &schemaCatalog); err != nil {
 			return nil, err
 		}
 		if table != "" {
-			catalog.BaseTable = table
+			schemaCatalog.BaseTable = table
 		}
-		if err := catalog.Validate(); err != nil {
+		if err := schemaCatalog.Validate(); err != nil {
 			return nil, err
 		}
-		return &staticCatalogProvider{catalog: &catalog}, nil
+		return catalog.NoopCloseProvider{
+			Provider: catalog.StaticProvider{
+				Snapshot: &catalog.Snapshot{Catalog: &schemaCatalog},
+			},
+		}, nil
 	}
 
 	if databaseURL == "" {

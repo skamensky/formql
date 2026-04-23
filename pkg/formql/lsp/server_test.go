@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/skamensky/formql/pkg/formql/catalog"
 	"github.com/skamensky/formql/pkg/formql/schema"
 )
 
@@ -19,11 +20,9 @@ type testProvider struct {
 	catalog *schema.Catalog
 }
 
-func (p *testProvider) LoadCatalog(context.Context, string) (*schema.Catalog, error) {
-	return p.catalog, nil
+func (p *testProvider) Load(context.Context, catalog.Ref) (*catalog.Snapshot, error) {
+	return &catalog.Snapshot{Catalog: p.catalog}, nil
 }
-
-func (p *testProvider) Close() {}
 
 func TestServerProvidesCompletionDefinitionAndHover(t *testing.T) {
 	schemaFile := `{

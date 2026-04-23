@@ -30,8 +30,11 @@ That split is intentional:
 - [`pkg/formql/semantics`](../pkg/formql/semantics/lower.go): typechecker and AST -> HIR lowering.
 - [`pkg/formql/ir`](../pkg/formql/ir/ir.go): typed semantic IR.
 - [`pkg/formql/backend/postgres`](../pkg/formql/backend/postgres/render.go): PostgreSQL SQL renderer.
-- [`pkg/formql/livecatalog`](../pkg/formql/livecatalog/postgres.go): live schema loader from PostgreSQL.
+- [`pkg/formql/api`](../pkg/formql/api/api.go): shared host-facing API for compile/verify flows.
+- [`pkg/formql/catalog`](../pkg/formql/catalog/provider.go): provider/cache/schema-info contracts.
+- [`pkg/formql/livecatalog`](../pkg/formql/livecatalog/postgres.go): live schema providers built on host-specific introspection sources.
 - [`pkg/formql/lsp`](../pkg/formql/lsp/server.go): minimal LSP server built on the same compiler/typechecker modules.
+- [`pkg/formql/wasm`](../pkg/formql/wasm/main.go): browser/Node entrypoint over the same Go engine.
 
 ## Mockable Interfaces
 
@@ -39,7 +42,11 @@ The compiler is not hardwired to the live DB layer.
 
 - [`schema.Resolver`](../pkg/formql/schema/schema.go): the compiler-facing interface for tables, columns, and relationships.
 - [`schema.Explorer`](../pkg/formql/schema/schema.go): extends `Resolver` for tooling surfaces like completion.
-- [`livecatalog.Provider`](../pkg/formql/livecatalog/postgres.go): a live DB-backed catalog source used by the CLI and LSP.
+- [`catalog.Provider`](../pkg/formql/catalog/provider.go): load a schema snapshot for a logical catalog ref.
+- [`catalog.ManagedProvider`](../pkg/formql/catalog/provider.go): provider plus optional lifecycle cleanup for host processes.
+- [`catalog.InfoProvider`](../pkg/formql/catalog/provider.go): frontend/editor-facing schema info view.
+- [`catalog.Cache`](../pkg/formql/catalog/provider.go): optional cache storage for schema snapshots.
+- [`livecatalog.Source`](../pkg/formql/livecatalog/postgres.go): raw host-specific introspection seam used to build provider snapshots.
 
 The tests in [`pkg/formql/formula_test.go`](../pkg/formql/formula_test.go) intentionally use a mocked catalog instead of a database connection.
 
@@ -54,9 +61,14 @@ Current warning support:
 
 Those warnings depend on live catalog metadata from PostgreSQL. If index information is unknown, the compiler stays silent instead of guessing.
 
-## Live Catalog
+## Live Catalog And Schema Info
 
-The live catalog loader introspects:
+Live catalog loading is split into two layers:
+
+- host-specific introspection via `livecatalog.Source`
+- shared snapshot/info loading via `catalog.Provider` and `catalog.InfoProvider`
+
+The current PostgreSQL-backed source introspects:
 
 - base tables and columns from `information_schema.columns`
 - direct foreign-key relationships from `information_schema.table_constraints`
@@ -66,11 +78,17 @@ Relationship names are currently derived mechanically from foreign-key column na
 
 That is an implementation choice, not a language commitment. The long-term traversal surface may be renamed or made more explicit.
 
+That lets different hosts resolve schema differently without changing compiler logic:
+
+- CLI/LSP can use `database/sql`
+- the PostgreSQL extension can introspect in-process
+- browser callers can use checked-in catalog JSON through the same provider contracts
+
 ## LSP
 
 The LSP server is intentionally thin in architecture, but now useful enough to drive editor workflows.
 
-- it reloads catalog information from the live database
+- it reloads catalog information through `catalog.Provider`
 - it can also run in offline schema mode from a checked-in schema JSON file
 - it typechecks documents by calling the same compiler modules as the CLI
 - it publishes parser/typechecker errors and warning diagnostics
@@ -81,6 +99,20 @@ The LSP server is intentionally thin in architecture, but now useful enough to d
 That is the modularity test: editor features are consumers of the compiler, not a parallel implementation.
 
 The repo also includes a VS Code client in [`editors/vscode`](../editors/vscode/package.json) and bundled example workspaces in [`examples/workspaces/offline-rental-offer`](../examples/workspaces/offline-rental-offer/README.md), [`examples/workspaces/offline-rental-contract`](../examples/workspaces/offline-rental-contract/README.md), and [`examples/workspaces/offline-resale-sale`](../examples/workspaces/offline-resale-sale/README.md).
+
+## WASM
+
+The wasm entrypoint in [`pkg/formql/wasm`](../pkg/formql/wasm/main.go) reuses the same Go compiler, provider, and schema-info packages for frontend or Node usage.
+
+Current wasm support:
+
+- schema info from catalog JSON
+- parsing, typechecking, and SQL generation from catalog JSON
+- shared result shapes for frontend consumers
+
+Current wasm limitation:
+
+- SQL verification is reported as unavailable in `js/wasm` builds, because the current offline verifier backend is not yet portable to browser runtimes
 
 ## Developer Workflow
 
@@ -114,7 +146,7 @@ Run the language server:
 make lsp BASE_TABLE=rental_contract
 ```
 
-## Verification Architecture (Extension-Ready, Testable in Go)
+## Verification Architecture
 
 FormQL verification should work entirely without a running database while still tracking PostgreSQL parser behavior.
 
@@ -127,14 +159,14 @@ To keep extension work testable and independent from extension build tooling, ve
 - `verify.Request`: SQL + bind args + verification mode
 - `verify.Result`: normalized success + diagnostics output
 
-This means extension-specific code is just one implementation of the verifier interface, not the interface itself.
+This means extension-specific code is just a host bridge into shared Go logic, not a second verifier implementation.
 
 ### Recommended staged rollout
 
 1. Use `go-pgquery` as the default offline verifier stage for parser correctness.
-2. Keep optional extension-backed checks as additional stages, not a requirement for verification.
+2. Keep the PostgreSQL extension as a host bridge into the same verifier stages, not a separate implementation.
 3. Keep any custom lints/policy checks advisory, never correctness-authoritative.
-4. Compose stages with `verify.Pipeline` so the same test corpus runs in CI and extension environments.
+4. Compose stages with `verify.Pipeline` so the same test corpus runs in CI, CLI, and extension environments.
 
 ### Correctness stance
 
@@ -145,36 +177,49 @@ Verification correctness is defined by PostgreSQL itself.
 - A running PostgreSQL instance is optional for additional runtime checks, not required for baseline verification.
 - Any FormQL-specific lint or policy pass must remain advisory over parser validity.
 
-## Proposed PostgreSQL Extension (Design Only, Not Implemented)
+## PostgreSQL Extension
 
-This section defines a first-pass contract for the extension work. It is
-intentionally design-only and does not introduce extension code yet.
+The PostgreSQL extension now ships as a thin PGXS module that links a Go C archive built from the same repository code used by the CLI and tests.
+
+Current layering:
+
+1. shared Go compiler and verifier packages in `pkg/formql/...`
+2. C-ABI bridge in [`pkg/formql/capi`](../pkg/formql/capi/main.go)
+3. thin PostgreSQL wrapper in [`ext/formql/src/formql.c`](../ext/formql/src/formql.c)
+
+The wrapper does not own verification or compilation semantics. It only:
+
+- converts PostgreSQL values to C strings / JSON text
+- calls the exported Go bridge functions
+- converts returned JSON back into PostgreSQL `text`, `boolean`, or `jsonb`
+
+The Go runtime lives in a separate shared helper library. PostgreSQL backend processes still need enough optional static TLS available to load that helper after startup, so container/runtime environments should set `GLIBC_TUNABLES=glibc.rtld.optional_static_tls=2048` or an equivalent host-level setting. `formql.so` remains the SQL-callable wrapper and links to the helper lazily at call time.
 
 ### API surface
 
-Expose a small SQL API from the extension so app code and tests use a stable contract:
+Current SQL API:
 
-- `formql_verify_sql(sql text) returns jsonb`
-  - parser-only verification response
-  - returns `{ ok: bool, diagnostics: [{code, message, detail?, hint?, position?}] }`
-- `formql_verify_expression(base_table text, formula text) returns jsonb`
-  - runs FormQL-to-SQL compilation externally, then verifies generated SQL in-db
-  - same response shape
-- `formql_version() returns text`
-  - extension version + parser compatibility marker
+- `formql_verify_sql_error(sql text) returns text`
+- `formql_verify_sql_ok(sql text) returns boolean`
+- `formql_verify_sql_diagnostics(sql text) returns jsonb`
+- `formql_catalog(base_table text) returns jsonb`
+- `formql_compile_catalog(catalog jsonb, formula text, field_alias text default 'result', verify_mode text default 'syntax') returns jsonb`
+- `formql_compile_live(base_table text, formula text, field_alias text default 'result', verify_mode text default 'syntax') returns jsonb`
 
 Design notes:
 
-- diagnostics are normalized JSON so Go/CLI/LSP surfaces can consume one shape
-- no execution endpoint in v1 (verification only)
-- if planning-level checks are added later, expose a mode argument rather than a separate function
+- the scalar verification helpers stay easy to call from SQL and shell scripts
+- the compile entrypoint is JSON because compiler output is structured
+- the live compile entrypoint resolves its catalog in-process, then calls the same Go compiler bridge as every other host
+- no execution endpoint in v1
+- compiler ownership stays in Go; only schema introspection differs by host
 
 ### Build strategy
 
 Use a split build so extension specifics stay isolated and testable:
 
 1. Keep shared verification contract and fixtures in Go (`pkg/formql/verify`).
-2. Build extension as a thin adapter layer that maps SQL calls to parser/verification engine.
+2. Build extension as a thin adapter layer that maps SQL calls to the shared Go bridge.
 3. Prefer PGXS-based extension packaging (`Makefile`, `.control`, `--*.sql`) for compatibility.
 4. Keep CI matrix with:
    - Go unit tests (no Postgres required)
@@ -187,7 +232,7 @@ Adopt the same fixture corpus in every layer:
 
 - **Contract tests (Go, offline):** expected diagnostics for valid/invalid SQL.
 - **Golden tests (compiler):** formula -> SQL output snapshots.
-- **Extension integration tests:** call `formql_verify_sql` against the same SQL fixtures and assert parity with offline verifier for parser outcomes.
+- **Extension integration tests:** call the extension verification functions against the same SQL fixtures and assert parity with the offline verifier for parser outcomes.
 - **Upgrade tests:** install old extension version, upgrade, and verify API compatibility.
 
 Minimum gating policy for the extension phase:
@@ -196,9 +241,9 @@ Minimum gating policy for the extension phase:
 - no merge unless extension install/upgrade scripts pass on every supported PG major
 
 
-### Return contract proposal (no JSON parsing required)
+### Return contract
 
-To keep the SQL-callsite simple, use a scalar-first API and make JSON optional:
+To keep SQL callsites simple, the extension keeps a scalar-first verification API and adds JSON only where structured output is necessary:
 
 - `formql_verify_sql_error(sql text) returns text`
   - `NULL` means verification passed
@@ -206,10 +251,10 @@ To keep the SQL-callsite simple, use a scalar-first API and make JSON optional:
 - `formql_verify_sql_ok(sql text) returns boolean`
   - `TRUE` when verification passed
   - `FALSE` when verification failed
-- optional advanced API: `formql_verify_sql_diagnostics(sql text) returns jsonb`
-  - full diagnostics only for callers that need machine-readable details
-
-This gives developers a no-JSON happy path while still supporting rich diagnostics.
+- `formql_verify_sql_diagnostics(sql text) returns jsonb`
+  - full machine-readable diagnostics when needed
+- `formql_compile_catalog(...) returns jsonb`
+  - compiler output plus verification result from the shared Go engine
 
 ### E2E Docker testing requirement (extension build + runtime)
 
@@ -243,7 +288,7 @@ Recommended make targets:
 - `make ext-docker-build` (build image with extension)
 - `make ext-e2e`         (run smoke SQL in container)
 
-### File hierarchy (proposed)
+### File hierarchy
 
 ```text
 ext/
@@ -255,7 +300,6 @@ ext/
       formql--0.1.0--0.1.1.sql
     src/
       formql.c                 # SQL-callable entrypoints
-      verify_bridge.c          # bridge to verification engine
     test/
       sql/
       expected/
@@ -268,8 +312,10 @@ testdata/
 
 pkg/formql/verify/
   verify.go                    # shared request/result contract
-  pipeline.go (optional split)
   pgquery.go                   # offline parser verifier
+
+pkg/formql/capi/
+  main.go                      # Go C-ABI bridge used by the extension
 ```
 
 Rationale:
