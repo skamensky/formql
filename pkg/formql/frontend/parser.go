@@ -12,6 +12,23 @@ import (
 
 // Parse parses a formula into an AST.
 func Parse(input string) (ast.Expr, error) {
+	p, err := newParser(input)
+	if err != nil {
+		return nil, err
+	}
+	return p.parse()
+}
+
+// ParseDocument parses a top-level field list into a document AST.
+func ParseDocument(input string) (*ast.Document, error) {
+	p, err := newParser(input)
+	if err != nil {
+		return nil, err
+	}
+	return p.parseDocument()
+}
+
+func newParser(input string) (*parser, error) {
 	l := newLexer(input)
 	p := &parser{lexer: l}
 
@@ -21,7 +38,7 @@ func Parse(input string) (ast.Expr, error) {
 		return nil, err
 	}
 
-	return p.parse()
+	return p, nil
 }
 
 type parser struct {
@@ -98,6 +115,69 @@ func (p *parser) parse() (ast.Expr, error) {
 	}
 
 	return node, nil
+}
+
+func (p *parser) parseDocument() (*ast.Document, error) {
+	if p.current.Type == token.EOF {
+		return nil, diagnostic.New("parser", "empty document", p.current.Position)
+	}
+
+	doc := &ast.Document{
+		Kind:  "document",
+		Items: make([]ast.SelectItem, 0, 4),
+		Pos:   p.current.Position,
+	}
+
+	for {
+		if p.current.Type == token.COMMA {
+			return nil, diagnostic.NewError("parser", "empty_select_item", "empty select item", "remove the extra comma or add an expression between commas", p.current.Position)
+		}
+
+		node, err := p.parseComparison()
+		if err != nil {
+			return nil, err
+		}
+
+		item := ast.SelectItem{
+			Kind: "select_item",
+			Expr: node,
+			Pos:  node.Position(),
+		}
+
+		if p.current.Type == token.IDENT && strings.EqualFold(p.current.Literal, "as") {
+			if err := p.next(); err != nil {
+				return nil, err
+			}
+			if p.current.Type != token.IDENT {
+				return nil, diagnostic.NewError("parser", "expected_alias_identifier", fmt.Sprintf("expected alias identifier, got %s", p.current.HumanLabel()), "write aliases as expr AS alias", p.current.Position)
+			}
+			item.Alias = strings.ToLower(p.current.Literal)
+			item.AliasPos = p.current.Position
+			if err := p.next(); err != nil {
+				return nil, err
+			}
+		}
+
+		doc.Items = append(doc.Items, item)
+
+		switch p.current.Type {
+		case token.EOF:
+			return doc, nil
+		case token.COMMA:
+			commaPos := p.current.Position
+			if err := p.next(); err != nil {
+				return nil, err
+			}
+			if p.current.Type == token.EOF {
+				return nil, diagnostic.NewError("parser", "trailing_comma", "trailing comma after select item", "remove the trailing comma or add another expression", commaPos)
+			}
+		default:
+			if token.StartsExpression(p.current.Type) {
+				return nil, p.missingOperatorError()
+			}
+			return nil, diagnostic.NewError("parser", "unexpected_token_after_select_item", fmt.Sprintf("unexpected %s after select item", p.current.HumanLabel()), "remove the extra token, add an operator, or separate fields with commas", p.current.Position)
+		}
+	}
 }
 
 func (p *parser) parseComparison() (ast.Expr, error) {

@@ -19,6 +19,21 @@ type Plan struct {
 	Warnings  []diagnostic.Warning `json:"warnings,omitempty"`
 }
 
+// DocumentPlan is the typed semantic result for a multi-field query document.
+type DocumentPlan struct {
+	BaseTable string               `json:"base_table"`
+	Fields    []SelectField        `json:"fields"`
+	Joins     []Join               `json:"joins"`
+	Warnings  []diagnostic.Warning `json:"warnings,omitempty"`
+}
+
+// SelectField is one typed output projection in a document plan.
+type SelectField struct {
+	Alias      string      `json:"alias"`
+	ResultType schema.Type `json:"type"`
+	Expr       Expr        `json:"expr"`
+}
+
 // Join is a direct relationship traversal required by the expression.
 type Join struct {
 	Key          string   `json:"key"`

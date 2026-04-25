@@ -16,6 +16,19 @@ type Artifact struct {
 	JoinClauses []string `json:"joins"`
 }
 
+// Projection is one rendered SELECT projection.
+type Projection struct {
+	Alias      string `json:"alias"`
+	Expression string `json:"expression"`
+}
+
+// DocumentArtifact is the SQL result of lowering a document IR plan to PostgreSQL.
+type DocumentArtifact struct {
+	Projections []Projection `json:"projections"`
+	Query       string       `json:"query"`
+	JoinClauses []string     `json:"joins"`
+}
+
 // Renderer lowers semantic IR to PostgreSQL SQL.
 type Renderer struct{}
 
@@ -34,26 +47,7 @@ func (r Renderer) Render(plan *ir.Plan, fieldAlias string) (Artifact, error) {
 	}
 
 	fromLine := fmt.Sprintf("FROM %s t0", quoteIdent(plan.BaseTable))
-	joinClauses := make([]string, 0, len(plan.Joins))
-
-	for _, join := range plan.Joins {
-		parentAlias := "t0"
-		if len(join.Path) > 1 {
-			parentAlias = aliasForPath(join.Path[:len(join.Path)-1])
-		}
-		alias := aliasForPath(join.Path)
-		joinClauses = append(joinClauses,
-			fmt.Sprintf(
-				"LEFT JOIN %s %s ON %s.%s = %s.%s",
-				quoteIdent(join.ToTable),
-				alias,
-				parentAlias,
-				quoteIdent(join.JoinColumn),
-				alias,
-				quoteIdent(join.TargetColumn),
-			),
-		)
-	}
+	joinClauses := renderJoinClauses(plan.Joins)
 
 	lines := []string{
 		fmt.Sprintf("SELECT %s AS %s", expression, quoteIdent(fieldAlias)),
@@ -63,6 +57,50 @@ func (r Renderer) Render(plan *ir.Plan, fieldAlias string) (Artifact, error) {
 
 	return Artifact{
 		Expression:  expression,
+		Query:       strings.Join(lines, "\n"),
+		JoinClauses: joinClauses,
+	}, nil
+}
+
+// RenderDocument renders a multi-field semantic plan into a full SELECT query.
+func (r Renderer) RenderDocument(plan *ir.DocumentPlan) (DocumentArtifact, error) {
+	if plan == nil {
+		return DocumentArtifact{}, fmt.Errorf("document plan is required")
+	}
+	if len(plan.Fields) == 0 {
+		return DocumentArtifact{}, fmt.Errorf("document plan must contain at least one field")
+	}
+
+	projections := make([]Projection, 0, len(plan.Fields))
+	for _, field := range plan.Fields {
+		if field.Alias == "" {
+			return DocumentArtifact{}, fmt.Errorf("document field alias is required")
+		}
+		expression, err := r.renderExpr(field.Expr)
+		if err != nil {
+			return DocumentArtifact{}, err
+		}
+		projections = append(projections, Projection{
+			Alias:      field.Alias,
+			Expression: expression,
+		})
+	}
+
+	lines := []string{"SELECT"}
+	for index, projection := range projections {
+		suffix := ","
+		if index == len(projections)-1 {
+			suffix = ""
+		}
+		lines = append(lines, fmt.Sprintf("  %s AS %s%s", projection.Expression, quoteIdent(projection.Alias), suffix))
+	}
+	lines = append(lines, fmt.Sprintf("FROM %s t0", quoteIdent(plan.BaseTable)))
+
+	joinClauses := renderJoinClauses(plan.Joins)
+	lines = append(lines, joinClauses...)
+
+	return DocumentArtifact{
+		Projections: projections,
 		Query:       strings.Join(lines, "\n"),
 		JoinClauses: joinClauses,
 	}, nil
@@ -91,6 +129,29 @@ func (Renderer) renderExpr(node ir.Expr) (string, error) {
 	default:
 		return "", fmt.Errorf("unsupported IR node %T", node)
 	}
+}
+
+func renderJoinClauses(joins []ir.Join) []string {
+	joinClauses := make([]string, 0, len(joins))
+	for _, join := range joins {
+		parentAlias := "t0"
+		if len(join.Path) > 1 {
+			parentAlias = aliasForPath(join.Path[:len(join.Path)-1])
+		}
+		alias := aliasForPath(join.Path)
+		joinClauses = append(joinClauses,
+			fmt.Sprintf(
+				"LEFT JOIN %s %s ON %s.%s = %s.%s",
+				quoteIdent(join.ToTable),
+				alias,
+				parentAlias,
+				quoteIdent(join.JoinColumn),
+				alias,
+				quoteIdent(join.TargetColumn),
+			),
+		)
+	}
+	return joinClauses
 }
 
 func renderLiteral(literal *ir.Literal) (string, error) {

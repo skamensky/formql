@@ -13,6 +13,67 @@ import (
 
 // Lower converts AST into typed semantic IR.
 func Lower(node ast.Expr, catalog schema.Resolver) (*ir.Plan, error) {
+	l, err := newLowerer(catalog)
+	if err != nil {
+		return nil, err
+	}
+
+	expr, err := l.lowerExpr(node)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ir.Plan{
+		BaseTable: l.baseTable,
+		Expr:      expr,
+		Joins:     l.orderedJoins(),
+		Warnings:  l.orderedWarnings(),
+	}, nil
+}
+
+// LowerDocument converts a top-level document AST into typed semantic IR.
+func LowerDocument(document *ast.Document, catalog schema.Resolver) (*ir.DocumentPlan, error) {
+	if document == nil {
+		return nil, fmt.Errorf("document is required")
+	}
+	if len(document.Items) == 0 {
+		return nil, diagnostic.New("semantics", "empty document", document.Pos)
+	}
+
+	l, err := newLowerer(catalog)
+	if err != nil {
+		return nil, err
+	}
+
+	fields := make([]ir.SelectField, 0, len(document.Items))
+	usedAliases := make(map[string]bool, len(document.Items))
+	for _, item := range document.Items {
+		expr, err := l.lowerExpr(item.Expr)
+		if err != nil {
+			return nil, err
+		}
+
+		alias, err := selectAlias(item, usedAliases)
+		if err != nil {
+			return nil, err
+		}
+
+		fields = append(fields, ir.SelectField{
+			Alias:      alias,
+			ResultType: expr.Type(),
+			Expr:       expr,
+		})
+	}
+
+	return &ir.DocumentPlan{
+		BaseTable: l.baseTable,
+		Fields:    fields,
+		Joins:     l.orderedJoins(),
+		Warnings:  l.orderedWarnings(),
+	}, nil
+}
+
+func newLowerer(catalog schema.Resolver) (*lowerer, error) {
 	if catalog == nil {
 		return nil, fmt.Errorf("schema catalog is required")
 	}
@@ -29,27 +90,23 @@ func Lower(node ast.Expr, catalog schema.Resolver) (*ir.Plan, error) {
 		warnOrder: make([]string, 0, 2),
 	}
 
-	expr, err := l.lowerExpr(node)
-	if err != nil {
-		return nil, err
-	}
+	return l, nil
+}
 
+func (l *lowerer) orderedJoins() []ir.Join {
 	joins := make([]ir.Join, 0, len(l.order))
 	for _, key := range l.order {
 		joins = append(joins, l.joins[key])
 	}
+	return joins
+}
 
+func (l *lowerer) orderedWarnings() []diagnostic.Warning {
 	warnings := make([]diagnostic.Warning, 0, len(l.warnOrder))
 	for _, key := range l.warnOrder {
 		warnings = append(warnings, l.warnings[key])
 	}
-
-	return &ir.Plan{
-		BaseTable: l.baseTable,
-		Expr:      expr,
-		Joins:     joins,
-		Warnings:  warnings,
-	}, nil
+	return warnings
 }
 
 type lowerer struct {
@@ -59,6 +116,59 @@ type lowerer struct {
 	order     []string
 	warnings  map[string]diagnostic.Warning
 	warnOrder []string
+}
+
+func selectAlias(item ast.SelectItem, used map[string]bool) (string, error) {
+	explicit := strings.TrimSpace(item.Alias) != ""
+	alias := strings.ToLower(strings.TrimSpace(item.Alias))
+	if alias == "" {
+		alias = defaultAlias(item.Expr)
+	}
+	if alias == "" {
+		alias = "result"
+	}
+
+	if explicit {
+		if used[alias] {
+			position := item.AliasPos
+			if position == 0 {
+				position = item.Pos
+			}
+			return "", diagnostic.NewError("semantics", "duplicate_output_alias", fmt.Sprintf("duplicate output alias %q", alias), "choose a unique alias for each selected field", position)
+		}
+		used[alias] = true
+		return alias, nil
+	}
+
+	alias = uniqueAlias(alias, used)
+	used[alias] = true
+	return alias, nil
+}
+
+func defaultAlias(node ast.Expr) string {
+	switch n := node.(type) {
+	case *ast.Identifier:
+		return n.Name
+	case *ast.RelationshipRef:
+		parts := make([]string, 0, len(n.Chain)+1)
+		parts = append(parts, n.Chain...)
+		parts = append(parts, n.Field)
+		return strings.Join(parts, "_")
+	default:
+		return "result"
+	}
+}
+
+func uniqueAlias(base string, used map[string]bool) string {
+	if !used[base] {
+		return base
+	}
+	for suffix := 2; ; suffix++ {
+		candidate := fmt.Sprintf("%s_%d", base, suffix)
+		if !used[candidate] {
+			return candidate
+		}
+	}
 }
 
 func (l *lowerer) lowerExpr(node ast.Expr) (ir.Expr, error) {

@@ -1,5 +1,21 @@
 package ast
 
+// Document is a top-level query document containing one or more selected fields.
+type Document struct {
+	Kind  string       `json:"kind"`
+	Items []SelectItem `json:"items"`
+	Pos   int          `json:"position"`
+}
+
+// SelectItem is one top-level output field in a document.
+type SelectItem struct {
+	Kind     string `json:"kind"`
+	Expr     Expr   `json:"expr"`
+	Alias    string `json:"alias,omitempty"`
+	AliasPos int    `json:"alias_position,omitempty"`
+	Pos      int    `json:"position"`
+}
+
 // Expr is a parsed syntax node.
 type Expr interface {
 	exprNode()
