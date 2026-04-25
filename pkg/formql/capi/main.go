@@ -110,6 +110,29 @@ func FormQLCompileCatalogJSON(catalogJSON *C.char, formula *C.char, fieldAlias *
 	})
 }
 
+//export FormQLCompileDocumentCatalogJSON
+func FormQLCompileDocumentCatalogJSON(catalogJSON *C.char, document *C.char, verifyMode *C.char) *C.char {
+	ctx := context.Background()
+	compilation, verification, err := api.CompileAndVerifyDocumentCatalogJSON(
+		ctx,
+		[]byte(goString(catalogJSON)),
+		goString(document),
+		parseMode(verifyMode),
+	)
+	if err != nil {
+		return mustCString(compileResponse{
+			OK:    false,
+			Error: &responseMessage{Message: err.Error()},
+		})
+	}
+
+	return mustCString(compileResponse{
+		OK:           true,
+		Compilation:  compilation,
+		Verification: &verification,
+	})
+}
+
 //export FormQLCatalogFromIntrospectionJSON
 func FormQLCatalogFromIntrospectionJSON(introspectionJSON *C.char) *C.char {
 	catalogValue, err := api.LoadCatalogIntrospectionJSON([]byte(goString(introspectionJSON)))
@@ -130,6 +153,29 @@ func FormQLCompileIntrospectionJSON(introspectionJSON *C.char, formula *C.char, 
 		[]byte(goString(introspectionJSON)),
 		goString(formula),
 		goString(fieldAlias),
+		parseMode(verifyMode),
+	)
+	if err != nil {
+		return mustCString(compileResponse{
+			OK:    false,
+			Error: &responseMessage{Message: err.Error()},
+		})
+	}
+
+	return mustCString(compileResponse{
+		OK:           true,
+		Compilation:  compilation,
+		Verification: &verification,
+	})
+}
+
+//export FormQLCompileDocumentIntrospectionJSON
+func FormQLCompileDocumentIntrospectionJSON(introspectionJSON *C.char, document *C.char, verifyMode *C.char) *C.char {
+	ctx := context.Background()
+	compilation, verification, err := api.CompileAndVerifyDocumentCatalogIntrospectionJSON(
+		ctx,
+		[]byte(goString(introspectionJSON)),
+		goString(document),
 		parseMode(verifyMode),
 	)
 	if err != nil {

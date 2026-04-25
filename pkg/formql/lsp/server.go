@@ -486,7 +486,7 @@ func (s *Server) publishDiagnostics(ctx context.Context, uri, text string) error
 	catalog := snapshot.Catalog
 
 	diagnostics := make([]lspDiagnostic, 0, 4)
-	plan, err := formql.Lower(text, catalog)
+	plan, err := formql.LowerDocument(text, catalog)
 	if err != nil {
 		diagnostics = append(diagnostics, convertErrorDiagnostic(text, err))
 	} else {

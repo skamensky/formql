@@ -37,10 +37,12 @@ var callbacks []js.Func
 
 func main() {
 	apiObject := map[string]any{
-		"loadSchemaInfoJSON":          callback(loadSchemaInfoJSON),
-		"compileCatalogJSON":          callback(compileCatalogJSON),
-		"compileAndVerifyCatalogJSON": callback(compileAndVerifyCatalogJSON),
-		"verifySQL":                   callback(verifySQL),
+		"loadSchemaInfoJSON":                  callback(loadSchemaInfoJSON),
+		"compileCatalogJSON":                  callback(compileCatalogJSON),
+		"compileDocumentCatalogJSON":          callback(compileDocumentCatalogJSON),
+		"compileAndVerifyCatalogJSON":         callback(compileAndVerifyCatalogJSON),
+		"compileAndVerifyDocumentCatalogJSON": callback(compileAndVerifyDocumentCatalogJSON),
+		"verifySQL":                           callback(verifySQL),
 	}
 	js.Global().Set("FormQL", js.ValueOf(apiObject))
 	select {}
@@ -105,6 +107,35 @@ func compileCatalogJSON(_ js.Value, args []js.Value) any {
 	})
 }
 
+func compileDocumentCatalogJSON(_ js.Value, args []js.Value) any {
+	catalogJSON, options, err := parseCatalogArgs(args)
+	if err != nil {
+		return resultError(err)
+	}
+	if len(args) < 2 {
+		return resultErrorString("compileDocumentCatalogJSON requires a document argument")
+	}
+
+	provider := catalog.JSONProvider{
+		Data:     []byte(catalogJSON),
+		Revision: options.Revision,
+	}
+	compilation, err := api.CompileDocument(
+		context.Background(),
+		provider,
+		catalogRef(options),
+		strings.TrimSpace(args[1].String()),
+	)
+	if err != nil {
+		return resultError(err)
+	}
+
+	return toJSValue(wasmResult{
+		OK:          true,
+		Compilation: compilation,
+	})
+}
+
 func compileAndVerifyCatalogJSON(_ js.Value, args []js.Value) any {
 	catalogJSON, options, err := parseCatalogArgs(args)
 	if err != nil {
@@ -124,6 +155,37 @@ func compileAndVerifyCatalogJSON(_ js.Value, args []js.Value) any {
 		catalogRef(options),
 		strings.TrimSpace(args[1].String()),
 		defaultString(options.FieldAlias, "result"),
+		verify.Mode(defaultString(options.VerifyMode, string(verify.ModeSyntax))),
+	)
+	if err != nil {
+		return resultError(err)
+	}
+
+	return toJSValue(wasmResult{
+		OK:           true,
+		Compilation:  compilation,
+		Verification: &verificationResult,
+	})
+}
+
+func compileAndVerifyDocumentCatalogJSON(_ js.Value, args []js.Value) any {
+	catalogJSON, options, err := parseCatalogArgs(args)
+	if err != nil {
+		return resultError(err)
+	}
+	if len(args) < 2 {
+		return resultErrorString("compileAndVerifyDocumentCatalogJSON requires a document argument")
+	}
+
+	provider := catalog.JSONProvider{
+		Data:     []byte(catalogJSON),
+		Revision: options.Revision,
+	}
+	compilation, verificationResult, err := api.CompileAndVerifyDocument(
+		context.Background(),
+		provider,
+		catalogRef(options),
+		strings.TrimSpace(args[1].String()),
 		verify.Mode(defaultString(options.VerifyMode, string(verify.ModeSyntax))),
 	)
 	if err != nil {
