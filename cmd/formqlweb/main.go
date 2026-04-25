@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -15,29 +16,39 @@ import (
 	"github.com/skamensky/formql/pkg/formql/api"
 	"github.com/skamensky/formql/pkg/formql/catalog"
 	"github.com/skamensky/formql/pkg/formql/verify"
+
+	_ "github.com/lib/pq"
 )
 
 type server struct {
 	root           string
 	rentalProvider catalog.Provider
+	execDB         *sql.DB
 }
 
 type compileRequest struct {
-	CatalogJSON json.RawMessage `json:"catalog_json"`
-	Formula     string          `json:"formula"`
-	FieldAlias  string          `json:"field_alias"`
-	VerifyMode  string          `json:"verify_mode"`
+	CatalogJSON          json.RawMessage `json:"catalog_json"`
+	Formula              string          `json:"formula"`
+	FieldAlias           string          `json:"field_alias"`
+	VerifyMode           string          `json:"verify_mode"`
+	MaxRelationshipDepth int             `json:"max_relationship_depth"`
 }
 
 type documentCompileRequest struct {
-	CatalogJSON json.RawMessage `json:"catalog_json"`
-	Document    string          `json:"document"`
-	VerifyMode  string          `json:"verify_mode"`
+	CatalogJSON          json.RawMessage `json:"catalog_json"`
+	Document             string          `json:"document"`
+	VerifyMode           string          `json:"verify_mode"`
+	MaxRelationshipDepth int             `json:"max_relationship_depth"`
 }
 
 type verifyRequest struct {
 	SQL        string `json:"sql"`
 	VerifyMode string `json:"verify_mode"`
+}
+
+type executeRequest struct {
+	SQL     string `json:"sql"`
+	MaxRows int    `json:"max_rows"`
 }
 
 type schemaInfoResponse struct {
@@ -59,6 +70,13 @@ type verifyResponse struct {
 	Error        *responseMessage `json:"error,omitempty"`
 }
 
+type executeResponse struct {
+	OK      bool             `json:"ok"`
+	Columns []string         `json:"columns,omitempty"`
+	Rows    []map[string]any `json:"rows,omitempty"`
+	Error   *responseMessage `json:"error,omitempty"`
+}
+
 type responseMessage struct {
 	Message string `json:"message"`
 }
@@ -66,6 +84,7 @@ type responseMessage struct {
 func main() {
 	addr := flag.String("addr", envOr("FORMQL_WEB_ADDR", "127.0.0.1:8090"), "listen address")
 	root := flag.String("root", envOr("FORMQL_WEB_ROOT", "."), "repo root")
+	databaseURL := flag.String("database-url", envOr("FORMQL_WEB_DATABASE_URL", envOr("DATABASE_URL", "postgres://formula:formula@localhost:54329/formula?sslmode=disable")), "execution database url")
 	flag.Parse()
 
 	absRoot, err := filepath.Abs(*root)
@@ -79,6 +98,23 @@ func main() {
 		log.Fatal(err)
 	}
 
+	var execDB *sql.DB
+	if strings.TrimSpace(*databaseURL) != "" {
+		db, err := sql.Open("postgres", *databaseURL)
+		if err != nil {
+			log.Printf("formqlweb execution disabled: open db failed: %v", err)
+		} else {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			if err := db.PingContext(ctx); err != nil {
+				log.Printf("formqlweb execution disabled: ping db failed: %v", err)
+				_ = db.Close()
+			} else {
+				execDB = db
+			}
+		}
+	}
+
 	s := server{
 		root: absRoot,
 		rentalProvider: catalog.CachingProvider{
@@ -88,12 +124,14 @@ func main() {
 			Cache: &catalog.MemoryCache{},
 			TTL:   5 * time.Minute,
 		},
+		execDB: execDB,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/catalog/rental-agency", s.handleRentalCatalog)
 	mux.HandleFunc("GET /api/schema-info/rental-agency", s.handleRentalSchemaInfo)
 	mux.HandleFunc("POST /api/verify-sql", s.handleVerifySQL)
+	mux.HandleFunc("POST /api/execute-sql", s.handleExecuteSQL)
 	mux.HandleFunc("POST /api/compile-and-verify", s.handleCompileAndVerify)
 	mux.HandleFunc("POST /api/compile-document-and-verify", s.handleCompileDocumentAndVerify)
 	mux.Handle("GET /wasm/", http.StripPrefix("/wasm/", http.FileServer(http.Dir(filepath.Join(absRoot, "web", "wasm", "dist")))))
@@ -192,12 +230,13 @@ func (s server) handleCompileAndVerify(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
-	compilation, verification, err := api.CompileAndVerifyCatalogJSON(
+	compilation, verification, err := api.CompileAndVerifyCatalogJSONWithOptions(
 		ctx,
 		req.CatalogJSON,
 		req.Formula,
 		defaultString(req.FieldAlias, "result"),
 		verify.Mode(defaultString(req.VerifyMode, string(verify.ModeSyntax))),
+		api.CompileOptions{MaxRelationshipDepth: req.MaxRelationshipDepth},
 	)
 	if err != nil {
 		writeJSON(w, http.StatusOK, compileResponse{
@@ -232,11 +271,12 @@ func (s server) handleCompileDocumentAndVerify(w http.ResponseWriter, r *http.Re
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
-	compilation, verification, err := api.CompileAndVerifyDocumentCatalogJSON(
+	compilation, verification, err := api.CompileAndVerifyDocumentCatalogJSONWithOptions(
 		ctx,
 		req.CatalogJSON,
 		req.Document,
 		verify.Mode(defaultString(req.VerifyMode, string(verify.ModeSyntax))),
+		api.CompileOptions{MaxRelationshipDepth: req.MaxRelationshipDepth},
 	)
 	if err != nil {
 		writeJSON(w, http.StatusOK, compileResponse{
@@ -250,6 +290,84 @@ func (s server) handleCompileDocumentAndVerify(w http.ResponseWriter, r *http.Re
 		OK:           true,
 		Compilation:  compilation,
 		Verification: &verification,
+	})
+}
+
+func (s server) handleExecuteSQL(w http.ResponseWriter, r *http.Request) {
+	if s.execDB == nil {
+		writeJSON(w, http.StatusServiceUnavailable, executeResponse{
+			OK:    false,
+			Error: &responseMessage{Message: "execution database is unavailable"},
+		})
+		return
+	}
+
+	var req executeRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	query, err := executableQuery(req.SQL)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	maxRows := req.MaxRows
+	if maxRows <= 0 {
+		maxRows = 25
+	}
+	if maxRows > 200 {
+		maxRows = 200
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	rows, err := s.execDB.QueryContext(ctx, query)
+	if err != nil {
+		writeJSON(w, http.StatusOK, executeResponse{
+			OK:    false,
+			Error: &responseMessage{Message: err.Error()},
+		})
+		return
+	}
+	defer rows.Close()
+
+	columns, err := rows.Columns()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	results := make([]map[string]any, 0, maxRows)
+	for rows.Next() && len(results) < maxRows {
+		values := make([]any, len(columns))
+		targets := make([]any, len(columns))
+		for i := range values {
+			targets[i] = &values[i]
+		}
+		if err := rows.Scan(targets...); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		record := make(map[string]any, len(columns))
+		for i, column := range columns {
+			record[column] = normalizeDBValue(values[i])
+		}
+		results = append(results, record)
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, executeResponse{
+		OK:      true,
+		Columns: columns,
+		Rows:    results,
 	})
 }
 
@@ -300,4 +418,26 @@ func defaultString(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func executableQuery(query string) (string, error) {
+	trimmed := strings.TrimSpace(strings.TrimSuffix(query, ";"))
+	if trimmed == "" {
+		return "", errors.New("sql is required")
+	}
+	upper := strings.ToUpper(trimmed)
+	firstWord := strings.Fields(upper)[0]
+	if firstWord != "SELECT" && firstWord != "WITH" {
+		return "", errors.New("only SELECT and WITH queries can be executed")
+	}
+	return trimmed, nil
+}
+
+func normalizeDBValue(value any) any {
+	switch typed := value.(type) {
+	case []byte:
+		return string(typed)
+	default:
+		return typed
+	}
 }
