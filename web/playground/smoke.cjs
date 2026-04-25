@@ -23,6 +23,17 @@ async function main() {
   }
 
   const catalog = await fetchJSON(`${baseURL}/api/catalog/rental-agency`);
+  const schemaInfoResponse = await fetchJSON(`${baseURL}/api/schema-info/rental-agency?base_table=rental_contract`);
+  if (!schemaInfoResponse.ok) {
+    throw new Error(`backend schema info failed: ${JSON.stringify(schemaInfoResponse)}`);
+  }
+  if (schemaInfoResponse.info.base_table !== "rental_contract") {
+    throw new Error(`unexpected schema info base table: ${schemaInfoResponse.info.base_table}`);
+  }
+  if (!schemaInfoResponse.info.tables.some((table) => table.name === "rental_contract")) {
+    throw new Error("schema info did not include rental_contract table");
+  }
+
   const info = globalThis.FormQL.loadSchemaInfoJSON(catalog, {
     baseTable: "rental_contract",
   });

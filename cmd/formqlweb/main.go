@@ -13,11 +13,13 @@ import (
 	"time"
 
 	"github.com/skamensky/formql/pkg/formql/api"
+	"github.com/skamensky/formql/pkg/formql/catalog"
 	"github.com/skamensky/formql/pkg/formql/verify"
 )
 
 type server struct {
-	root string
+	root           string
+	rentalProvider catalog.Provider
 }
 
 type compileRequest struct {
@@ -30,6 +32,12 @@ type compileRequest struct {
 type verifyRequest struct {
 	SQL        string `json:"sql"`
 	VerifyMode string `json:"verify_mode"`
+}
+
+type schemaInfoResponse struct {
+	OK    bool             `json:"ok"`
+	Info  *catalog.Info    `json:"info,omitempty"`
+	Error *responseMessage `json:"error,omitempty"`
 }
 
 type compileResponse struct {
@@ -59,10 +67,26 @@ func main() {
 		log.Fatal(err)
 	}
 
-	s := server{root: absRoot}
+	rentalCatalogPath := filepath.Join(absRoot, "examples", "catalogs", "rental-agency.formql.schema.json")
+	rentalCatalogJSON, err := os.ReadFile(rentalCatalogPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	s := server{
+		root: absRoot,
+		rentalProvider: catalog.CachingProvider{
+			Upstream: catalog.JSONProvider{
+				Data: rentalCatalogJSON,
+			},
+			Cache: &catalog.MemoryCache{},
+			TTL:   5 * time.Minute,
+		},
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/catalog/rental-agency", s.handleRentalCatalog)
+	mux.HandleFunc("GET /api/schema-info/rental-agency", s.handleRentalSchemaInfo)
 	mux.HandleFunc("POST /api/verify-sql", s.handleVerifySQL)
 	mux.HandleFunc("POST /api/compile-and-verify", s.handleCompileAndVerify)
 	mux.Handle("GET /wasm/", http.StripPrefix("/wasm/", http.FileServer(http.Dir(filepath.Join(absRoot, "web", "wasm", "dist")))))
@@ -92,6 +116,26 @@ func (s server) handleRentalCatalog(w http.ResponseWriter, _ *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(data)
+}
+
+func (s server) handleRentalSchemaInfo(w http.ResponseWriter, r *http.Request) {
+	baseTable := strings.TrimSpace(r.URL.Query().Get("base_table"))
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	info, err := api.LoadSchemaInfo(ctx, s.rentalProvider, catalog.Ref{BaseTable: baseTable})
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, schemaInfoResponse{
+			OK:    false,
+			Error: &responseMessage{Message: err.Error()},
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, schemaInfoResponse{
+		OK:   true,
+		Info: info,
+	})
 }
 
 func (s server) handleVerifySQL(w http.ResponseWriter, r *http.Request) {

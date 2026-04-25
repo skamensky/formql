@@ -69,10 +69,10 @@
       }
 
       textarea,
-      pre {
+      pre,
+      select {
         box-sizing: border-box;
         width: 100%;
-        min-height: 15rem;
         margin: 0;
         border: 1px solid var(--line);
         border-radius: 0.9rem;
@@ -81,6 +81,33 @@
         font: 0.95rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         padding: 1rem;
         overflow: auto;
+      }
+
+      textarea,
+      pre {
+        min-height: 15rem;
+      }
+
+      .stack {
+        display: grid;
+        gap: 1rem;
+      }
+
+      .meta {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.75rem;
+      }
+
+      .summary {
+        margin-top: 1rem;
+        padding: 0.9rem 1rem;
+        border: 1px solid var(--line);
+        border-radius: 0.9rem;
+        background: rgba(255, 253, 248, 0.8);
+        color: var(--muted);
+        font-size: 0.92rem;
+        line-height: 1.5;
       }
 
       button {
@@ -126,10 +153,30 @@
 
       <section class="grid">
         <div class="panel">
-          <label for="formula">Formula</label>
-          <textarea id="formula">customer_rel.email & " / " & STRING(actual_total)</textarea>
+          <div class="stack">
+            <div class="meta">
+              <div>
+                <label for="base-table">Base Table</label>
+                <select id="base-table"></select>
+              </div>
+              <div>
+                <label for="formula-preset">Preset</label>
+                <select id="formula-preset">
+                  <option value='customer_rel.email & " / " & STRING(actual_total)'>Customer Email / Total</option>
+                  <option value='rep_rel.manager_rel.first_name & " @ " & rep_rel.branch_rel.name'>Rep Manager / Branch</option>
+                  <option value='vehicle_rel.model_name & " / " & STRING(vehicle_rel.model_year)'>Vehicle Badge</option>
+                  <option value='IF(customer_rel.email = NULL, "missing-email", customer_rel.email)'>Email Fallback</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label for="formula">Formula</label>
+              <textarea id="formula">customer_rel.email & " / " & STRING(actual_total)</textarea>
+            </div>
+          </div>
           <button id="run">Compile in WASM + Verify Online</button>
           <div id="status" class="status">loading wasm...</div>
+          <div id="summary" class="summary">waiting for schema info…</div>
         </div>
         <div class="panel">
           <label for="output">Result</label>
@@ -142,17 +189,50 @@
     <script>
       const state = {
         catalog: null,
+        schemaInfo: null,
         ready: false,
       };
 
       const status = document.getElementById("status");
+      const summary = document.getElementById("summary");
       const output = document.getElementById("output");
       const formula = document.getElementById("formula");
+      const formulaPreset = document.getElementById("formula-preset");
+      const baseTable = document.getElementById("base-table");
       const run = document.getElementById("run");
 
       function setStatus(message, isError = false) {
         status.textContent = message;
         status.classList.toggle("error", isError);
+      }
+
+      function setSummary(message) {
+        summary.textContent = message;
+      }
+
+      function updateBaseTableOptions(info) {
+        const selected = info.base_table || "rental_contract";
+        const names = info.tables.map((table) => table.name).sort();
+        baseTable.innerHTML = names
+          .map((name) => `<option value="${name}" ${name === selected ? "selected" : ""}>${name}</option>`)
+          .join("");
+      }
+
+      async function loadSchemaInfo(requestedBaseTable = "") {
+        const url = new URL("/api/schema-info/rental-agency", window.location.origin);
+        if (requestedBaseTable) {
+          url.searchParams.set("base_table", requestedBaseTable);
+        }
+        const response = await fetch(url);
+        const payload = await response.json();
+        if (!payload.ok) {
+          throw new Error(payload.error.message);
+        }
+        state.schemaInfo = payload.info;
+        updateBaseTableOptions(payload.info);
+        setSummary(
+          `base_table=${payload.info.base_table} tables=${payload.info.tables.length} relationships=${payload.info.relationships.length}`,
+        );
       }
 
       async function init() {
@@ -162,6 +242,7 @@
 
         const catalogResponse = await fetch("/api/catalog/rental-agency");
         state.catalog = await catalogResponse.json();
+        await loadSchemaInfo("rental_contract");
         state.ready = true;
         setStatus("ready");
       }
@@ -173,7 +254,7 @@
         }
 
         const compiled = FormQL.compileCatalogJSON(state.catalog, formula.value, {
-          baseTable: "rental_contract",
+          baseTable: baseTable.value,
           fieldAlias: "result",
         });
         if (!compiled.ok) {
@@ -191,10 +272,24 @@
           }),
         });
         const verified = await verifyResponse.json();
-        const combined = { compiled, online_verification: verified };
+        const combined = {
+          schema_info: state.schemaInfo,
+          compiled,
+          online_verification: verified,
+        };
         output.textContent = JSON.stringify(combined, null, 2);
         setStatus(verified.verification?.ok ? "online verification passed" : "online verification failed", !verified.verification?.ok);
       }
+
+      formulaPreset.addEventListener("change", () => {
+        formula.value = formulaPreset.value;
+      });
+
+      baseTable.addEventListener("change", () => {
+        loadSchemaInfo(baseTable.value).catch((error) => {
+          setStatus(error.message, true);
+        });
+      });
 
       run.addEventListener("click", () => {
         compileAndVerify().catch((error) => {
