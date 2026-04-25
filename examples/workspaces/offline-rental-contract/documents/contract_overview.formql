@@ -1,0 +1,10 @@
+contract_number,
+customer_rel.first_name & " " & customer_rel.last_name AS customer_name,
+customer_rel.email AS customer_email,
+vehicle_rel.model_name AS vehicle_model,
+vehicle_rel.class_code AS vehicle_class,
+branch_rel.name AS branch_name,
+rep_rel.manager_rel.first_name & " " & rep_rel.manager_rel.last_name AS manager_name,
+actual_total,
+ROUND(actual_total / actual_days, 2) AS daily_rate,
+IF(returned_late = TRUE, "late", "on-time") AS return_status

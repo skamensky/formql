@@ -1,0 +1,8 @@
+contract_number,
+LOWER(COALESCE(customer_rel.email, rep_rel.email, vehicle_rel.vendor_rel.support_email)) AS support_email,
+customer_rel.loyalty_tier,
+customer_rel.prior_contract_count,
+IF(customer_rel.repeat_customer = TRUE, "repeat", "new") AS customer_segment,
+branch_rel.region AS branch_region,
+vehicle_rel.vendor_rel.name AS vendor_name,
+IF(ISBLANK(TRIM(vehicle_rel.vendor_rel.support_email)), "needs-vendor-followup", "ready") AS vendor_support_status
