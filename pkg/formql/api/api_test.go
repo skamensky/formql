@@ -90,10 +90,36 @@ func TestCompileCatalogJSONCompilesFormula(t *testing.T) {
 	}
 }
 
+func TestCompileDocumentCatalogJSONCompilesDocument(t *testing.T) {
+	compilation, err := CompileDocumentCatalogJSON([]byte(testCatalogJSON), `amount, customer_rel.email AS customer_email`)
+	if err != nil {
+		t.Fatalf("CompileDocumentCatalogJSON returned error: %v", err)
+	}
+	if compilation.SQL.Query == "" {
+		t.Fatal("expected non-empty SQL query")
+	}
+	if len(compilation.HIR.Fields) != 2 {
+		t.Fatalf("expected 2 fields, got %d", len(compilation.HIR.Fields))
+	}
+}
+
 func TestCompileAndVerifyCatalogJSON(t *testing.T) {
 	compilation, verification, err := CompileAndVerifyCatalogJSON(context.Background(), []byte(testCatalogJSON), "amount + 1", "result", verify.ModeSyntax)
 	if err != nil {
 		t.Fatalf("CompileAndVerifyCatalogJSON returned error: %v", err)
+	}
+	if compilation == nil {
+		t.Fatal("expected compilation")
+	}
+	if !verification.OK {
+		t.Fatalf("expected verification OK, got %#v", verification)
+	}
+}
+
+func TestCompileAndVerifyDocumentCatalogJSON(t *testing.T) {
+	compilation, verification, err := CompileAndVerifyDocumentCatalogJSON(context.Background(), []byte(testCatalogJSON), `amount, customer_rel.email`, verify.ModeSyntax)
+	if err != nil {
+		t.Fatalf("CompileAndVerifyDocumentCatalogJSON returned error: %v", err)
 	}
 	if compilation == nil {
 		t.Fatal("expected compilation")

@@ -183,6 +183,53 @@ func TestServerProvidesCompletionDefinitionAndHover(t *testing.T) {
 	}
 }
 
+func TestDocumentCompletionContextAfterComma(t *testing.T) {
+	catalog := &schema.Catalog{
+		BaseTable: "opportunity",
+		Tables: []schema.Table{
+			{
+				Name: "opportunity",
+				Columns: []schema.Column{
+					{Name: "customer_id", Type: schema.TypeNumber},
+					{Name: "offer_amount", Type: schema.TypeNumber},
+				},
+			},
+			{
+				Name: "customer",
+				Columns: []schema.Column{
+					{Name: "id", Type: schema.TypeNumber},
+					{Name: "first_name", Type: schema.TypeString},
+				},
+			},
+		},
+		Relationships: []schema.Relationship{
+			{
+				Name:         "customer",
+				FromTable:    "opportunity",
+				ToTable:      "customer",
+				JoinColumn:   "customer_id",
+				TargetColumn: "id",
+			},
+		},
+	}
+	if err := catalog.Validate(); err != nil {
+		t.Fatalf("validate catalog: %v", err)
+	}
+
+	baseItems := completionItems(catalog, "opportunity", "offer_amount, ", diagnosticPosition{Line: 0, Character: len("offer_amount, ")})
+	if !hasCompletionLabel(baseItems, "offer_amount") {
+		t.Fatalf("document field completion missing base column: %#v", baseItems)
+	}
+	if !hasCompletionLabel(baseItems, "customer_rel") {
+		t.Fatalf("document field completion missing relationship: %#v", baseItems)
+	}
+
+	relatedItems := completionItems(catalog, "opportunity", "offer_amount, customer_rel.", diagnosticPosition{Line: 0, Character: len("offer_amount, customer_rel.")})
+	if !hasCompletionLabel(relatedItems, "first_name") {
+		t.Fatalf("document relationship completion missing related column: %#v", relatedItems)
+	}
+}
+
 func TestServerHoverWithoutSymbolReturnsExplicitNullResult(t *testing.T) {
 	schemaFile := `{
   "base_table": "opportunity",
@@ -285,6 +332,15 @@ type rawRPCMessage struct {
 	Method string          `json:"method,omitempty"`
 	Result json.RawMessage `json:"result,omitempty"`
 	Params json.RawMessage `json:"params,omitempty"`
+}
+
+func hasCompletionLabel(items []completionItem, label string) bool {
+	for _, item := range items {
+		if item.Label == label {
+			return true
+		}
+	}
+	return false
 }
 
 func writeRPC(t *testing.T, output *bytes.Buffer, payload map[string]any) {

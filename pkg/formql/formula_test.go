@@ -154,6 +154,160 @@ func TestMockCatalogCanEmitJoinWarningsAndDedupeJoins(t *testing.T) {
 	}
 }
 
+func TestParseDocumentKeepsTopLevelCommasSeparateFromFunctionArgs(t *testing.T) {
+	document, err := formql.ParseDocument(`IF(amount = NULL, "missing", STRING(amount)) AS Label, amount`)
+	if err != nil {
+		t.Fatalf("ParseDocument failed: %v", err)
+	}
+	if len(document.Items) != 2 {
+		t.Fatalf("expected 2 select items, got %d", len(document.Items))
+	}
+	if document.Items[0].Alias != "label" {
+		t.Fatalf("expected lower-cased alias label, got %q", document.Items[0].Alias)
+	}
+}
+
+func TestCompileDocumentRendersMultipleProjections(t *testing.T) {
+	catalog := &mockCatalog{
+		baseTable: "orders",
+		tables: map[string]schema.Table{
+			"orders": {
+				Name: "orders",
+				Columns: []schema.Column{
+					{Name: "amount", Type: schema.TypeNumber},
+					{Name: "customer_id", Type: schema.TypeNumber},
+				},
+			},
+			"customers": {
+				Name: "customers",
+				Columns: []schema.Column{
+					{Name: "id", Type: schema.TypeNumber},
+					{Name: "email", Type: schema.TypeString},
+				},
+			},
+		},
+		relationships: map[string]schema.Relationship{
+			"orders:customer": {
+				Name:         "customer",
+				FromTable:    "orders",
+				ToTable:      "customers",
+				JoinColumn:   "customer_id",
+				TargetColumn: "id",
+			},
+		},
+	}
+
+	compilation, err := formql.CompileDocument(`amount, customer_rel.email, amount + 1 AS amount_plus_one`, catalog)
+	if err != nil {
+		t.Fatalf("CompileDocument failed: %v", err)
+	}
+
+	want := "SELECT\n  t0.\"amount\" AS \"amount\",\n  rel_customer.\"email\" AS \"customer_email\",\n  (t0.\"amount\" + 1) AS \"amount_plus_one\"\nFROM \"orders\" t0\nLEFT JOIN \"customers\" rel_customer ON t0.\"customer_id\" = rel_customer.\"id\""
+	if compilation.SQL.Query != want {
+		t.Fatalf("unexpected document query\nwant:\n%s\n\ngot:\n%s", want, compilation.SQL.Query)
+	}
+	if got := compilation.HIR.Fields[1].Alias; got != "customer_email" {
+		t.Fatalf("unexpected relationship alias %q", got)
+	}
+}
+
+func TestCompileDocumentDedupeJoinsAndWarnings(t *testing.T) {
+	catalog := &mockCatalog{
+		baseTable: "submission",
+		tables: map[string]schema.Table{
+			"submission": {
+				Name: "submission",
+				Columns: []schema.Column{
+					{Name: "merchant_id", Type: schema.TypeNumber},
+				},
+			},
+			"merchant": {
+				Name: "merchant",
+				Columns: []schema.Column{
+					{Name: "id", Type: schema.TypeNumber},
+					{Name: "name", Type: schema.TypeString},
+					{Name: "category", Type: schema.TypeString},
+				},
+			},
+		},
+		relationships: map[string]schema.Relationship{
+			"submission:merchant": {
+				Name:              "merchant",
+				FromTable:         "submission",
+				ToTable:           "merchant",
+				JoinColumn:        "merchant_id",
+				TargetColumn:      "id",
+				JoinColumnIndexed: boolPtr(false),
+			},
+		},
+	}
+
+	compilation, err := formql.CompileDocument(`merchant_rel.name, merchant_rel.category`, catalog)
+	if err != nil {
+		t.Fatalf("CompileDocument failed: %v", err)
+	}
+
+	if len(compilation.HIR.Joins) != 1 {
+		t.Fatalf("expected one deduped join, got %d", len(compilation.HIR.Joins))
+	}
+	if len(compilation.HIR.Warnings) != 1 {
+		t.Fatalf("expected one warning, got %d", len(compilation.HIR.Warnings))
+	}
+	if strings.Count(compilation.SQL.Query, "LEFT JOIN") != 1 {
+		t.Fatalf("expected one LEFT JOIN in query, got:\n%s", compilation.SQL.Query)
+	}
+}
+
+func TestCompileDocumentUsesStableDerivedAliases(t *testing.T) {
+	catalog := &mockCatalog{
+		baseTable: "submission",
+		tables: map[string]schema.Table{
+			"submission": {
+				Name: "submission",
+				Columns: []schema.Column{
+					{Name: "amount", Type: schema.TypeNumber},
+				},
+			},
+		},
+		relationships: map[string]schema.Relationship{},
+	}
+
+	compilation, err := formql.CompileDocument(`amount + 1, amount + 2`, catalog)
+	if err != nil {
+		t.Fatalf("CompileDocument failed: %v", err)
+	}
+	if compilation.HIR.Fields[0].Alias != "result" || compilation.HIR.Fields[1].Alias != "result_2" {
+		t.Fatalf("unexpected derived aliases: %#v", compilation.HIR.Fields)
+	}
+}
+
+func TestCompileDocumentRejectsDuplicateExplicitAliases(t *testing.T) {
+	catalog := &mockCatalog{
+		baseTable: "submission",
+		tables: map[string]schema.Table{
+			"submission": {
+				Name: "submission",
+				Columns: []schema.Column{
+					{Name: "amount", Type: schema.TypeNumber},
+				},
+			},
+		},
+		relationships: map[string]schema.Relationship{},
+	}
+
+	_, err := formql.CompileDocument(`amount AS total, amount + 1 AS total`, catalog)
+	if err == nil {
+		t.Fatal("expected duplicate alias error")
+	}
+	typed, ok := diagnostic.AsError(err)
+	if !ok {
+		t.Fatalf("expected diagnostic error, got %T", err)
+	}
+	if typed.Code != "duplicate_output_alias" {
+		t.Fatalf("unexpected code: %s", typed.Code)
+	}
+}
+
 func TestMultiLevelRelationshipAndIf(t *testing.T) {
 	catalog := &mockCatalog{
 		baseTable: "opportunity",
