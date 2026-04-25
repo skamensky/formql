@@ -36,11 +36,16 @@ Bytecode is not ruled out, but it would be another backend or lower IR stage. It
 ## Developer tools
 
 - `formqlc ast`: parse only
+- `formqlc document-ast`: parse a comma-separated multi-field document
 - `formqlc hir`: parse + typecheck + semantic IR
+- `formqlc document-hir`: parse + typecheck a multi-field document
 - `formqlc typecheck`: typecheck against a live catalog or schema file
+- `formqlc document-typecheck`: typecheck a multi-field document
 - `formqlc query`: emit PostgreSQL SQL
+- `formqlc document-query`: emit PostgreSQL SQL for a multi-projection document
 - `formqlc verify-sql`: verify raw SQL through the shared verifier
 - `formqlc verify-query`: compile a formula, then verify the generated SQL through the same verifier
+- `formqlc verify-document-query`: compile a document, then verify the generated SQL
 - `formqlc catalog`: introspect a live Postgres schema
 - `formqlc lsp`: run the language server
 
@@ -87,7 +92,9 @@ The JS surface is:
 
 - `FormQL.loadSchemaInfoJSON(catalogJSON, options?)`
 - `FormQL.compileCatalogJSON(catalogJSON, formula, options?)`
+- `FormQL.compileDocumentCatalogJSON(catalogJSON, document, options?)`
 - `FormQL.compileAndVerifyCatalogJSON(catalogJSON, formula, options?)`
+- `FormQL.compileAndVerifyDocumentCatalogJSON(catalogJSON, document, options?)`
 - `FormQL.verifySQL(sql, options?)`
 
 Today, `js/wasm` builds support schema info, parsing, typechecking, and SQL generation. SQL verification itself is reported as unavailable in wasm builds, because the current offline verifier backend is not portable to browser runtimes yet.
@@ -111,6 +118,7 @@ make db-up
 make catalog BASE_TABLE=rental_contract
 make typecheck BASE_TABLE=rental_contract FORMULA='rep_rel.manager_rel.first_name & " @ " & rep_rel.branch_rel.name'
 make query BASE_TABLE=resale_sale FORMULA='vehicle_rel.model_name & " / " & STRING(vehicle_rel.model_year)'
+make document-query BASE_TABLE=rental_contract FORMULA='actual_total, customer_rel.email, vehicle_rel.model_name AS vehicle_model'
 make verify-query BASE_TABLE=resale_sale FORMULA='vehicle_rel.model_name & " / " & STRING(vehicle_rel.model_year)'
 ```
 
@@ -130,6 +138,8 @@ The extension currently exposes SQL verification helpers, a live catalog export,
 - `formql_catalog(base_table text) -> jsonb`
 - `formql_compile_catalog(catalog jsonb, formula text, field_alias text default 'result', verify_mode text default 'syntax') -> jsonb`
 - `formql_compile_live(base_table text, formula text, field_alias text default 'result', verify_mode text default 'syntax') -> jsonb`
+- `formql_compile_document_catalog(catalog jsonb, document text, verify_mode text default 'syntax') -> jsonb`
+- `formql_compile_document_live(base_table text, document text, verify_mode text default 'syntax') -> jsonb`
 
 Because the extension uses a Go runtime helper library, PostgreSQL needs enough optional static TLS available to load it lazily:
 

@@ -56,6 +56,20 @@ async function main() {
     throw new Error("wasm compiled SQL did not reference rental_contract");
   }
 
+  const documentCompiled = globalThis.FormQL.compileDocumentCatalogJSON(
+    catalog,
+    'actual_total, customer_rel.email, vehicle_rel.model_name AS vehicle_model',
+    {
+      baseTable: "rental_contract",
+    },
+  );
+  if (!documentCompiled.ok) {
+    throw new Error(`wasm document compile failed: ${documentCompiled.error.message}`);
+  }
+  if (!documentCompiled.compilation.sql.query.includes('"customer_email"')) {
+    throw new Error("wasm document SQL did not include derived customer_email projection");
+  }
+
   const verified = await postJSON(`${baseURL}/api/verify-sql`, {
     sql: compiled.compilation.sql.query,
     verify_mode: "syntax",
@@ -72,6 +86,18 @@ async function main() {
   });
   if (!backendCompiled.ok || !backendCompiled.verification.ok) {
     throw new Error(`backend compile+verify failed: ${JSON.stringify(backendCompiled)}`);
+  }
+
+  const backendDocumentCompiled = await postJSON(`${baseURL}/api/compile-document-and-verify`, {
+    catalog_json: catalog,
+    document: "actual_total, customer_rel.email",
+    verify_mode: "syntax",
+  });
+  if (!backendDocumentCompiled.ok || !backendDocumentCompiled.verification.ok) {
+    throw new Error(`backend document compile+verify failed: ${JSON.stringify(backendDocumentCompiled)}`);
+  }
+  if (!backendDocumentCompiled.compilation.sql.query.includes('"customer_email"')) {
+    throw new Error("backend document query did not include customer_email projection");
   }
 
   console.log("web backend + wasm smoke passed");

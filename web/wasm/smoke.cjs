@@ -46,6 +46,23 @@ async function main() {
     throw new Error("compiled SQL did not reference rental_contract");
   }
 
+  const documentResult = globalThis.FormQL.compileDocumentCatalogJSON(
+    catalogJSON,
+    'actual_total, customer_rel.email, vehicle_rel.model_name AS vehicle_model',
+    {
+      baseTable: "rental_contract",
+    },
+  );
+  if (!documentResult.ok) {
+    throw new Error(`document compile failed: ${documentResult.error.message}`);
+  }
+  if (!documentResult.compilation.sql.query.includes('"customer_email"')) {
+    throw new Error("document SQL did not include derived customer_email projection");
+  }
+  if (!documentResult.compilation.sql.query.includes('"vehicle_model"')) {
+    throw new Error("document SQL did not include explicit vehicle_model projection");
+  }
+
   const verifyResult = globalThis.FormQL.compileAndVerifyCatalogJSON(
     catalogJSON,
     "actual_total + 1",
@@ -63,6 +80,21 @@ async function main() {
   }
   if (verifyResult.verification.diagnostics[0].code !== "verification_unavailable") {
     throw new Error(`unexpected verification diagnostic: ${verifyResult.verification.diagnostics[0].code}`);
+  }
+
+  const documentVerifyResult = globalThis.FormQL.compileAndVerifyDocumentCatalogJSON(
+    catalogJSON,
+    "actual_total, customer_rel.email",
+    {
+      baseTable: "rental_contract",
+      verifyMode: "syntax",
+    },
+  );
+  if (!documentVerifyResult.ok) {
+    throw new Error(`document compile+verify failed: ${documentVerifyResult.error.message}`);
+  }
+  if (documentVerifyResult.verification.ok) {
+    throw new Error("expected wasm document verification to report unsupported status");
   }
 
   const sqlResult = globalThis.FormQL.verifySQL("SELECT 1", { verifyMode: "syntax" });

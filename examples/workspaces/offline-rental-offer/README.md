@@ -22,6 +22,8 @@ Open any file under `formulas/` to test:
 - quoted-rate math and deposit logic
 - same-schema behavior from a third base table, not just contracts and resale
 
+Open files under `documents/` to test multi-field query documents for quote-stage views.
+
 ## Feature Coverage
 
 This workspace focuses on offer-stage behavior:
@@ -29,3 +31,4 @@ This workspace focuses on offer-stage behavior:
 - pricing and rate math: `quoted_rate_calc.formql`, `discount_gate.formql`
 - route and branch logic: `cross_region_route.formql`, `offer_route_label.formql`
 - quote freshness and intake status: `offer_age_days.formql`, `offer_queue.formql`
+- document examples: `offer_intake_view.formql`

@@ -90,7 +90,7 @@ The LSP server is intentionally thin in architecture, but now useful enough to d
 
 - it reloads catalog information through `catalog.Provider`
 - it can also run in offline schema mode from a checked-in schema JSON file
-- it typechecks documents by calling the same compiler modules as the CLI
+- it typechecks single-formula files and comma-separated documents by calling the same compiler modules as the CLI
 - it publishes parser/typechecker errors and warning diagnostics
 - it serves completions for columns, relationships, and functions
 - it serves hover information for columns and relationships
@@ -108,6 +108,7 @@ Current wasm support:
 
 - schema info from catalog JSON
 - parsing, typechecking, and SQL generation from catalog JSON
+- multi-field document compilation through the same browser/Node surface
 - shared result shapes for frontend consumers
 
 Current wasm limitation:
@@ -205,12 +206,14 @@ Current SQL API:
 - `formql_catalog(base_table text) returns jsonb`
 - `formql_compile_catalog(catalog jsonb, formula text, field_alias text default 'result', verify_mode text default 'syntax') returns jsonb`
 - `formql_compile_live(base_table text, formula text, field_alias text default 'result', verify_mode text default 'syntax') returns jsonb`
+- `formql_compile_document_catalog(catalog jsonb, document text, verify_mode text default 'syntax') returns jsonb`
+- `formql_compile_document_live(base_table text, document text, verify_mode text default 'syntax') returns jsonb`
 
 Design notes:
 
 - the scalar verification helpers stay easy to call from SQL and shell scripts
-- the compile entrypoint is JSON because compiler output is structured
-- the live compile entrypoint resolves its catalog in-process, then calls the same Go compiler bridge as every other host
+- the compile entrypoints are JSON because compiler output is structured
+- the live compile entrypoints resolve their catalog in-process, then call the same Go compiler bridge as every other host
 - no execution endpoint in v1
 - compiler ownership stays in Go; only schema introspection differs by host
 
@@ -255,6 +258,8 @@ To keep SQL callsites simple, the extension keeps a scalar-first verification AP
   - full machine-readable diagnostics when needed
 - `formql_compile_catalog(...) returns jsonb`
   - compiler output plus verification result from the shared Go engine
+- `formql_compile_document_catalog(...) returns jsonb`
+  - multi-projection compiler output plus verification result from the shared Go engine
 
 ### E2E Docker testing requirement (extension build + runtime)
 

@@ -22,6 +22,8 @@ Open any file under `formulas/` to test:
 - vehicle lineage paths through purchase and vendor relationships
 - explicit `STRING(...)` casting inside string concatenation
 
+Open files under `documents/` to test multi-field query documents for used-car resale reporting.
+
 ## Feature Coverage
 
 This workspace complements the contract workspace with resale-specific language coverage:
@@ -30,3 +32,4 @@ This workspace complements the contract workspace with resale-specific language 
 - date casting and date arithmetic: `days_to_year_end.formql`, `warranty_window_days.formql`
 - absolute deltas and margin logic: `margin_gap_abs.formql`, `margin_band.formql`
 - warning-path traversal through manager relationships: `manager_line.formql`
+- document examples: `resale_margin_view.formql`

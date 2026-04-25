@@ -23,6 +23,8 @@ Open any file under `formulas/` to test:
 - warnings for non-indexed joins along manager and vendor paths
 - realistic contract, fleet, and vendor logic across a richer sample domain
 
+Open files under `documents/` to test multi-field query documents that compile to one SQL `SELECT` with several projections.
+
 ## Feature Coverage
 
 The formulas folder is meant to be a browseable language tour, not just a demo:
@@ -33,3 +35,4 @@ The formulas folder is meant to be a browseable language tour, not just a demo:
 - numeric operators and rounding: `daily_rate_calc.formql`, `discount_gross.formql`, `damage_credit.formql`
 - date math: `contract_days_remaining.formql`
 - join-warning examples: `manager_watch.formql`, `vendor_fallback.formql`
+- document examples: `contract_overview.formql`, `customer_support_view.formql`

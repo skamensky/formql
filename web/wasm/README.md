@@ -28,7 +28,9 @@ The current JS surface is:
 
 - `FormQL.loadSchemaInfoJSON(catalogJSON, options?)`
 - `FormQL.compileCatalogJSON(catalogJSON, formula, options?)`
+- `FormQL.compileDocumentCatalogJSON(catalogJSON, document, options?)`
 - `FormQL.compileAndVerifyCatalogJSON(catalogJSON, formula, options?)`
+- `FormQL.compileAndVerifyDocumentCatalogJSON(catalogJSON, document, options?)`
 - `FormQL.verifySQL(sql, options?)`
 
 Options currently support:

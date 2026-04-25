@@ -83,6 +83,29 @@
         overflow: auto;
       }
 
+      input[type="checkbox"] {
+        accent-color: var(--accent);
+      }
+
+      .toggle {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        min-height: 100%;
+        border: 1px solid var(--line);
+        border-radius: 0.9rem;
+        background: rgba(255, 253, 248, 0.72);
+        color: var(--muted);
+        font-size: 0.82rem;
+        letter-spacing: 0.08em;
+        padding: 0 0.85rem;
+        text-transform: uppercase;
+      }
+
+      .toggle label {
+        margin: 0;
+      }
+
       textarea,
       pre {
         min-height: 15rem;
@@ -166,11 +189,21 @@
                   <option value='rep_rel.manager_rel.first_name & " @ " & rep_rel.branch_rel.name'>Rep Manager / Branch</option>
                   <option value='vehicle_rel.model_name & " / " & STRING(vehicle_rel.model_year)'>Vehicle Badge</option>
                   <option value='IF(customer_rel.email = NULL, "missing-email", customer_rel.email)'>Email Fallback</option>
+                  <option value='actual_total, customer_rel.email, vehicle_rel.model_name AS vehicle_model' data-document="true">
+                    Document: Contract View
+                  </option>
+                  <option value='rep_rel.manager_rel.first_name & " @ " & rep_rel.branch_rel.name AS manager_line, rep_rel.branch_rel.name AS branch_name' data-document="true">
+                    Document: Rep View
+                  </option>
                 </select>
               </div>
             </div>
+            <div class="toggle">
+              <input id="document-mode" type="checkbox" />
+              <label for="document-mode">Document mode</label>
+            </div>
             <div>
-              <label for="formula">Formula</label>
+              <label for="formula">Formula / Document</label>
               <textarea id="formula">customer_rel.email & " / " & STRING(actual_total)</textarea>
             </div>
           </div>
@@ -200,6 +233,7 @@
       const formulaPreset = document.getElementById("formula-preset");
       const baseTable = document.getElementById("base-table");
       const run = document.getElementById("run");
+      const documentMode = document.getElementById("document-mode");
 
       function setStatus(message, isError = false) {
         status.textContent = message;
@@ -253,10 +287,14 @@
           return;
         }
 
-        const compiled = FormQL.compileCatalogJSON(state.catalog, formula.value, {
-          baseTable: baseTable.value,
-          fieldAlias: "result",
-        });
+        const compiled = documentMode.checked
+          ? FormQL.compileDocumentCatalogJSON(state.catalog, formula.value, {
+              baseTable: baseTable.value,
+            })
+          : FormQL.compileCatalogJSON(state.catalog, formula.value, {
+              baseTable: baseTable.value,
+              fieldAlias: "result",
+            });
         if (!compiled.ok) {
           output.textContent = JSON.stringify(compiled, null, 2);
           setStatus(compiled.error.message, true);
@@ -283,6 +321,7 @@
 
       formulaPreset.addEventListener("change", () => {
         formula.value = formulaPreset.value;
+        documentMode.checked = formulaPreset.selectedOptions[0]?.dataset.document === "true";
       });
 
       baseTable.addEventListener("change", () => {
