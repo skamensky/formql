@@ -37,3 +37,21 @@ CREATE FUNCTION formql_compile_live(
 RETURNS jsonb
 AS 'MODULE_PATHNAME', 'formql_compile_live'
 LANGUAGE C STABLE STRICT;
+
+CREATE FUNCTION formql_compile_document_catalog(
+  catalog jsonb,
+  document text,
+  verify_mode text DEFAULT 'syntax'
+)
+RETURNS jsonb
+AS 'MODULE_PATHNAME', 'formql_compile_document_catalog'
+LANGUAGE C IMMUTABLE STRICT;
+
+CREATE FUNCTION formql_compile_document_live(
+  base_table text,
+  document text,
+  verify_mode text DEFAULT 'syntax'
+)
+RETURNS jsonb
+AS 'MODULE_PATHNAME', 'formql_compile_document_live'
+LANGUAGE C STABLE STRICT;

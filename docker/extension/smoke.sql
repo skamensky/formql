@@ -15,7 +15,9 @@ DO $$
 DECLARE
   live_catalog jsonb;
   compiled jsonb;
+  document_compiled jsonb;
   live_compiled jsonb;
+  live_document_compiled jsonb;
 BEGIN
   IF formql_verify_sql_error('SELECT 1') IS NOT NULL THEN
     RAISE EXCEPTION 'expected NULL error for valid SQL';
@@ -69,6 +71,34 @@ BEGIN
     RAISE EXCEPTION 'expected verification ok in compile response, got %', compiled::text;
   END IF;
 
+  document_compiled := formql_compile_document_catalog(
+    '{
+      "base_table":"orders",
+      "tables":[
+        {
+          "name":"orders",
+          "columns":[
+            {"name":"id","type":"number"},
+            {"name":"amount","type":"number"}
+          ]
+        }
+      ],
+      "relationships":[]
+    }'::jsonb,
+    'amount, amount + 1 AS amount_plus_one',
+    'syntax'
+  );
+
+  IF COALESCE((document_compiled->>'ok')::boolean, false) IS NOT TRUE THEN
+    RAISE EXCEPTION 'expected document compile ok response, got %', document_compiled::text;
+  END IF;
+  IF POSITION('"amount_plus_one"' IN document_compiled #>> '{compilation,sql,query}') = 0 THEN
+    RAISE EXCEPTION 'expected document query to include explicit projection alias, got %', document_compiled::text;
+  END IF;
+  IF COALESCE((document_compiled #>> '{verification,ok}')::boolean, false) IS NOT TRUE THEN
+    RAISE EXCEPTION 'expected verification ok in document compile response, got %', document_compiled::text;
+  END IF;
+
   live_catalog := formql_catalog('orders');
   IF live_catalog #>> '{base_table}' <> 'orders' THEN
     RAISE EXCEPTION 'expected live catalog base_table=orders, got %', live_catalog::text;
@@ -92,5 +122,24 @@ BEGIN
   END IF;
   IF COALESCE((live_compiled #>> '{verification,ok}')::boolean, false) IS NOT TRUE THEN
     RAISE EXCEPTION 'expected live verification ok in compile response, got %', live_compiled::text;
+  END IF;
+
+  live_document_compiled := formql_compile_document_live(
+    'orders',
+    'amount, customer_rel.email',
+    'syntax'
+  );
+
+  IF COALESCE((live_document_compiled->>'ok')::boolean, false) IS NOT TRUE THEN
+    RAISE EXCEPTION 'expected live document compile ok response, got %', live_document_compiled::text;
+  END IF;
+  IF POSITION('"customer_email"' IN live_document_compiled #>> '{compilation,sql,query}') = 0 THEN
+    RAISE EXCEPTION 'expected live document query to include customer_email projection, got %', live_document_compiled::text;
+  END IF;
+  IF POSITION('JOIN "customers"' IN live_document_compiled #>> '{compilation,sql,query}') = 0 THEN
+    RAISE EXCEPTION 'expected live document query to include customers join, got %', live_document_compiled::text;
+  END IF;
+  IF COALESCE((live_document_compiled #>> '{verification,ok}')::boolean, false) IS NOT TRUE THEN
+    RAISE EXCEPTION 'expected live document verification ok in compile response, got %', live_document_compiled::text;
   END IF;
 END $$;

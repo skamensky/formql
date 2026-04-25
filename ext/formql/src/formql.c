@@ -16,6 +16,8 @@ PG_FUNCTION_INFO_V1(formql_verify_sql_diagnostics);
 PG_FUNCTION_INFO_V1(formql_catalog);
 PG_FUNCTION_INFO_V1(formql_compile_catalog);
 PG_FUNCTION_INFO_V1(formql_compile_live);
+PG_FUNCTION_INFO_V1(formql_compile_document_catalog);
+PG_FUNCTION_INFO_V1(formql_compile_document_live);
 
 typedef struct QualifiedName {
 	char *schema_name;
@@ -221,6 +223,22 @@ Datum formql_compile_catalog(PG_FUNCTION_ARGS) {
 	PG_RETURN_DATUM(jsonb_datum_from_formql_cstring(json));
 }
 
+Datum formql_compile_document_catalog(PG_FUNCTION_ARGS) {
+	Datum catalog = PG_GETARG_DATUM(0);
+	text *document_text = PG_GETARG_TEXT_PP(1);
+	text *verify_mode_text = PG_GETARG_TEXT_PP(2);
+	char *catalog_json = DatumGetCString(DirectFunctionCall1(jsonb_out, catalog));
+	char *document = text_to_cstring(document_text);
+	char *verify_mode = text_to_cstring(verify_mode_text);
+	char *json = FormQLCompileDocumentCatalogJSON(catalog_json, document, verify_mode);
+
+	if (json == NULL) {
+		ereport(ERROR, (errmsg("formql document compile bridge returned NULL")));
+	}
+
+	PG_RETURN_DATUM(jsonb_datum_from_formql_cstring(json));
+}
+
 Datum formql_compile_live(PG_FUNCTION_ARGS) {
 	text *base_table_text = PG_GETARG_TEXT_PP(0);
 	text *formula_text = PG_GETARG_TEXT_PP(1);
@@ -235,6 +253,24 @@ Datum formql_compile_live(PG_FUNCTION_ARGS) {
 
 	if (json == NULL) {
 		ereport(ERROR, (errmsg("formql live compile bridge returned NULL")));
+	}
+
+	pfree(introspection_json);
+	PG_RETURN_DATUM(jsonb_datum_from_formql_cstring(json));
+}
+
+Datum formql_compile_document_live(PG_FUNCTION_ARGS) {
+	text *base_table_text = PG_GETARG_TEXT_PP(0);
+	text *document_text = PG_GETARG_TEXT_PP(1);
+	text *verify_mode_text = PG_GETARG_TEXT_PP(2);
+	char *base_table = text_to_cstring(base_table_text);
+	char *introspection_json = live_catalog_json(base_table);
+	char *document = text_to_cstring(document_text);
+	char *verify_mode = text_to_cstring(verify_mode_text);
+	char *json = FormQLCompileDocumentIntrospectionJSON(introspection_json, document, verify_mode);
+
+	if (json == NULL) {
+		ereport(ERROR, (errmsg("formql live document compile bridge returned NULL")));
 	}
 
 	pfree(introspection_json);
