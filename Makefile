@@ -11,7 +11,7 @@ NODE ?= node
 FORMQL_WEB_ADDR ?= 127.0.0.1:8090
 FORMQL_WEB_URL ?= http://$(FORMQL_WEB_ADDR)
 
-.PHONY: go-test db-up db-down db-reset ext-db-up ext-db-down ext-docker-build ext-e2e catalog ast hir typecheck query verify-sql verify-query lsp lsp-offline typecheck-offline vscode-extension-package vscode-extension-install vscode-extension-reinstall wasm-build wasm-smoke web-backend web-smoke
+.PHONY: go-test db-up db-down db-reset ext-build ext-build-local ext-db-up ext-db-down ext-docker-build ext-e2e catalog ast document-ast hir document-hir typecheck document-typecheck query query-offline document-query document-query-offline verify-sql verify-query verify-document-query lsp lsp-offline typecheck-offline document-typecheck-offline vscode-extension-package vscode-extension-install vscode-extension-reinstall wasm-build wasm-smoke web-backend web-smoke
 
 go-test:
 	go test ./...
@@ -32,20 +32,41 @@ catalog:
 ast:
 	go run ./cmd/formqlc ast -formula '$(FORMULA)'
 
+document-ast:
+	go run ./cmd/formqlc document-ast -formula '$(FORMULA)'
+
 hir:
 	go run ./cmd/formqlc hir -database-url "$(DATABASE_URL)" -table "$(BASE_TABLE)" -formula '$(FORMULA)'
+
+document-hir:
+	go run ./cmd/formqlc document-hir -database-url "$(DATABASE_URL)" -table "$(BASE_TABLE)" -formula '$(FORMULA)'
 
 typecheck:
 	go run ./cmd/formqlc typecheck -database-url "$(DATABASE_URL)" -table "$(BASE_TABLE)" -formula '$(FORMULA)'
 
+document-typecheck:
+	go run ./cmd/formqlc document-typecheck -database-url "$(DATABASE_URL)" -table "$(BASE_TABLE)" -formula '$(FORMULA)'
+
 query:
 	go run ./cmd/formqlc query -database-url "$(DATABASE_URL)" -table "$(BASE_TABLE)" -formula '$(FORMULA)'
+
+query-offline:
+	go run ./cmd/formqlc query -schema "$(SCHEMA_PATH)" -table "$(BASE_TABLE)" -formula '$(FORMULA)'
+
+document-query:
+	go run ./cmd/formqlc document-query -database-url "$(DATABASE_URL)" -table "$(BASE_TABLE)" -formula '$(FORMULA)'
+
+document-query-offline:
+	go run ./cmd/formqlc document-query -schema "$(SCHEMA_PATH)" -table "$(BASE_TABLE)" -formula '$(FORMULA)'
 
 verify-sql:
 	go run ./cmd/formqlc verify-sql -sql 'SELECT 1'
 
 verify-query:
 	go run ./cmd/formqlc verify-query -database-url "$(DATABASE_URL)" -table "$(BASE_TABLE)" -formula '$(FORMULA)'
+
+verify-document-query:
+	go run ./cmd/formqlc verify-document-query -database-url "$(DATABASE_URL)" -table "$(BASE_TABLE)" -formula '$(FORMULA)'
 
 lsp:
 	go run ./cmd/formqlc lsp -database-url "$(DATABASE_URL)" -table "$(BASE_TABLE)"
@@ -55,6 +76,9 @@ lsp-offline:
 
 typecheck-offline:
 	go run ./cmd/formqlc typecheck -schema "$(SCHEMA_PATH)" -table "$(BASE_TABLE)" -formula '$(FORMULA)'
+
+document-typecheck-offline:
+	go run ./cmd/formqlc document-typecheck -schema "$(SCHEMA_PATH)" -table "$(BASE_TABLE)" -formula '$(FORMULA)'
 
 vscode-extension-package:
 	cd "$(VSCODE_EXTENSION_DIR)" && npx @vscode/vsce package
@@ -82,7 +106,15 @@ ext-e2e: ext-db-down ext-docker-build ext-db-up
 
 
 ext-build:
-	make -C ext/formql
+	@if command -v pg_config >/dev/null 2>&1; then \
+		$(MAKE) ext-build-local; \
+	else \
+		echo "pg_config not found; building extension Docker image instead"; \
+		$(MAKE) ext-docker-build; \
+	fi
+
+ext-build-local:
+	$(MAKE) -C ext/formql
 
 wasm-build:
 	mkdir -p "$(WASM_OUT_DIR)"

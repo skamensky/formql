@@ -29,6 +29,12 @@ type compileRequest struct {
 	VerifyMode  string          `json:"verify_mode"`
 }
 
+type documentCompileRequest struct {
+	CatalogJSON json.RawMessage `json:"catalog_json"`
+	Document    string          `json:"document"`
+	VerifyMode  string          `json:"verify_mode"`
+}
+
 type verifyRequest struct {
 	SQL        string `json:"sql"`
 	VerifyMode string `json:"verify_mode"`
@@ -89,6 +95,7 @@ func main() {
 	mux.HandleFunc("GET /api/schema-info/rental-agency", s.handleRentalSchemaInfo)
 	mux.HandleFunc("POST /api/verify-sql", s.handleVerifySQL)
 	mux.HandleFunc("POST /api/compile-and-verify", s.handleCompileAndVerify)
+	mux.HandleFunc("POST /api/compile-document-and-verify", s.handleCompileDocumentAndVerify)
 	mux.Handle("GET /wasm/", http.StripPrefix("/wasm/", http.FileServer(http.Dir(filepath.Join(absRoot, "web", "wasm", "dist")))))
 	mux.Handle("GET /", http.FileServer(http.Dir(filepath.Join(absRoot, "web", "playground"))))
 
@@ -190,6 +197,45 @@ func (s server) handleCompileAndVerify(w http.ResponseWriter, r *http.Request) {
 		req.CatalogJSON,
 		req.Formula,
 		defaultString(req.FieldAlias, "result"),
+		verify.Mode(defaultString(req.VerifyMode, string(verify.ModeSyntax))),
+	)
+	if err != nil {
+		writeJSON(w, http.StatusOK, compileResponse{
+			OK:    false,
+			Error: &responseMessage{Message: err.Error()},
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, compileResponse{
+		OK:           true,
+		Compilation:  compilation,
+		Verification: &verification,
+	})
+}
+
+func (s server) handleCompileDocumentAndVerify(w http.ResponseWriter, r *http.Request) {
+	var req documentCompileRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if len(req.CatalogJSON) == 0 {
+		writeError(w, http.StatusBadRequest, errors.New("catalog_json is required"))
+		return
+	}
+	if strings.TrimSpace(req.Document) == "" {
+		writeError(w, http.StatusBadRequest, errors.New("document is required"))
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	compilation, verification, err := api.CompileAndVerifyDocumentCatalogJSON(
+		ctx,
+		req.CatalogJSON,
+		req.Document,
 		verify.Mode(defaultString(req.VerifyMode, string(verify.ModeSyntax))),
 	)
 	if err != nil {

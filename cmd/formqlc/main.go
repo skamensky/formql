@@ -26,16 +26,26 @@ func main() {
 	switch os.Args[1] {
 	case "ast":
 		exitIfErr(runAST(os.Args[2:]))
+	case "document-ast":
+		exitIfErr(runDocumentAST(os.Args[2:]))
 	case "hir":
 		exitIfErr(runHIR(os.Args[2:]))
+	case "document-hir":
+		exitIfErr(runDocumentHIR(os.Args[2:]))
 	case "query":
 		exitIfErr(runQuery(os.Args[2:]))
+	case "document-query":
+		exitIfErr(runDocumentQuery(os.Args[2:]))
 	case "verify-sql":
 		exitIfErr(runVerifySQL(os.Args[2:]))
 	case "verify-query":
 		exitIfErr(runVerifyQuery(os.Args[2:]))
+	case "verify-document-query":
+		exitIfErr(runVerifyDocumentQuery(os.Args[2:]))
 	case "typecheck":
 		exitIfErr(runTypecheck(os.Args[2:]))
+	case "document-typecheck":
+		exitIfErr(runDocumentTypecheck(os.Args[2:]))
 	case "catalog":
 		exitIfErr(runCatalog(os.Args[2:]))
 	case "lsp":
@@ -47,7 +57,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: formqlc <ast|hir|query|verify-sql|verify-query|typecheck|catalog|lsp> [flags]")
+	fmt.Fprintln(os.Stderr, "usage: formqlc <ast|document-ast|hir|document-hir|query|document-query|verify-sql|verify-query|verify-document-query|typecheck|document-typecheck|catalog|lsp> [flags]")
 }
 
 func runAST(args []string) error {
@@ -66,6 +76,27 @@ func runAST(args []string) error {
 	return writeJSON(parsed)
 }
 
+func runDocumentAST(args []string) error {
+	fs := flag.NewFlagSet("document-ast", flag.ContinueOnError)
+	formulaText := fs.String("formula", "", "document source")
+	documentText := fs.String("document", "", "document source")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	source := *documentText
+	if source == "" {
+		source = *formulaText
+	}
+	if source == "" {
+		return fmt.Errorf("document-ast requires -document or -formula")
+	}
+	parsed, err := formql.ParseDocument(source)
+	if err != nil {
+		return err
+	}
+	return writeJSON(parsed)
+}
+
 func runHIR(args []string) error {
 	fs := commonFlagSet("hir")
 	if err := fs.Parse(args); err != nil {
@@ -77,6 +108,23 @@ func runHIR(args []string) error {
 		return err
 	}
 	plan, err := formql.Lower(config.formulaText, catalog)
+	if err != nil {
+		return err
+	}
+	return writeJSON(plan)
+}
+
+func runDocumentHIR(args []string) error {
+	fs := commonFlagSet("document-hir")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	config := extractCommonConfig(fs)
+	catalog, err := loadCatalog(config)
+	if err != nil {
+		return err
+	}
+	plan, err := formql.LowerDocument(config.formulaText, catalog)
 	if err != nil {
 		return err
 	}
@@ -111,6 +159,33 @@ func runQuery(args []string) error {
 	})
 }
 
+func runDocumentQuery(args []string) error {
+	fs := commonFlagSet("document-query")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	config := extractCommonConfig(fs)
+	catalog, err := loadCatalog(config)
+	if err != nil {
+		return err
+	}
+	compilation, err := formql.CompileDocument(config.formulaText, catalog)
+	if err != nil {
+		return err
+	}
+	return writeJSON(struct {
+		Projections any      `json:"projections"`
+		Query       string   `json:"query"`
+		Joins       []string `json:"joins"`
+		Warnings    any      `json:"warnings,omitempty"`
+	}{
+		Projections: compilation.SQL.Projections,
+		Query:       compilation.SQL.Query,
+		Joins:       compilation.SQL.JoinClauses,
+		Warnings:    compilation.HIR.Warnings,
+	})
+}
+
 func runTypecheck(args []string) error {
 	fs := commonFlagSet("typecheck")
 	if err := fs.Parse(args); err != nil {
@@ -134,6 +209,48 @@ func runTypecheck(args []string) error {
 	}{
 		Valid:        true,
 		ResultType:   string(plan.Expr.Type()),
+		JoinCount:    len(plan.Joins),
+		WarningCount: len(plan.Warnings),
+		Warnings:     plan.Warnings,
+	})
+}
+
+func runDocumentTypecheck(args []string) error {
+	fs := commonFlagSet("document-typecheck")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	config := extractCommonConfig(fs)
+	catalog, err := loadCatalog(config)
+	if err != nil {
+		return err
+	}
+	plan, err := formql.LowerDocument(config.formulaText, catalog)
+	if err != nil {
+		return err
+	}
+	fields := make([]struct {
+		Alias      string `json:"alias"`
+		ResultType string `json:"result_type"`
+	}, 0, len(plan.Fields))
+	for _, field := range plan.Fields {
+		fields = append(fields, struct {
+			Alias      string `json:"alias"`
+			ResultType string `json:"result_type"`
+		}{
+			Alias:      field.Alias,
+			ResultType: string(field.ResultType),
+		})
+	}
+	return writeJSON(struct {
+		Valid        bool `json:"valid"`
+		Fields       any  `json:"fields"`
+		JoinCount    int  `json:"join_count"`
+		WarningCount int  `json:"warning_count"`
+		Warnings     any  `json:"warnings,omitempty"`
+	}{
+		Valid:        true,
+		Fields:       fields,
 		JoinCount:    len(plan.Joins),
 		WarningCount: len(plan.Warnings),
 		Warnings:     plan.Warnings,
@@ -176,6 +293,41 @@ func runVerifyQuery(args []string) error {
 	}
 
 	compilation, err := formql.Compile(config.formulaText, catalog, *field)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	result, err := api.VerifySQL(ctx, compilation.SQL.Query, verify.Mode(*mode))
+	if err != nil {
+		return err
+	}
+
+	return writeJSON(struct {
+		Query        string        `json:"query"`
+		Verification verify.Result `json:"verification"`
+	}{
+		Query:        compilation.SQL.Query,
+		Verification: result,
+	})
+}
+
+func runVerifyDocumentQuery(args []string) error {
+	fs := commonFlagSet("verify-document-query")
+	mode := fs.String("mode", string(verify.ModeSyntax), "verification mode")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	config := extractCommonConfig(fs)
+	catalog, err := loadCatalog(config)
+	if err != nil {
+		return err
+	}
+
+	compilation, err := formql.CompileDocument(config.formulaText, catalog)
 	if err != nil {
 		return err
 	}
@@ -254,6 +406,7 @@ type commonConfig struct {
 func commonFlagSet(name string) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.String("formula", "", "formula source")
+	fs.String("document", "", "document source")
 	fs.String("schema", "", "path to schema json")
 	fs.String("database-url", envOr("FORMULA_DATABASE_URL", envOr("DATABASE_URL", "")), "postgres connection string")
 	fs.String("table", envOr("FORMULA_BASE_TABLE", ""), "base table")
@@ -261,8 +414,12 @@ func commonFlagSet(name string) *flag.FlagSet {
 }
 
 func extractCommonConfig(fs *flag.FlagSet) commonConfig {
+	source := fs.Lookup("formula").Value.String()
+	if source == "" {
+		source = fs.Lookup("document").Value.String()
+	}
 	return commonConfig{
-		formulaText: fs.Lookup("formula").Value.String(),
+		formulaText: source,
 		schemaPath:  fs.Lookup("schema").Value.String(),
 		databaseURL: fs.Lookup("database-url").Value.String(),
 		table:       fs.Lookup("table").Value.String(),
@@ -271,7 +428,7 @@ func extractCommonConfig(fs *flag.FlagSet) commonConfig {
 
 func loadCatalog(config commonConfig) (*schema.Catalog, error) {
 	if config.formulaText == "" {
-		return nil, fmt.Errorf("command requires -formula")
+		return nil, fmt.Errorf("command requires -formula or -document")
 	}
 	if config.schemaPath != "" {
 		file, err := os.ReadFile(config.schemaPath)
