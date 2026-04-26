@@ -10,19 +10,26 @@ import (
 
 	"github.com/skamensky/formql/pkg/formql/api"
 	"github.com/skamensky/formql/pkg/formql/catalog"
+	"github.com/skamensky/formql/pkg/formql/diagnostic"
+	"github.com/skamensky/formql/pkg/formql/tooling"
 	"github.com/skamensky/formql/pkg/formql/verify"
 )
 
 type wasmOptions struct {
-	BaseTable  string `json:"base_table,omitempty"`
-	Namespace  string `json:"namespace,omitempty"`
-	FieldAlias string `json:"field_alias,omitempty"`
-	VerifyMode string `json:"verify_mode,omitempty"`
-	Revision   string `json:"revision,omitempty"`
+	BaseTable            string `json:"base_table,omitempty"`
+	Namespace            string `json:"namespace,omitempty"`
+	FieldAlias           string `json:"field_alias,omitempty"`
+	VerifyMode           string `json:"verify_mode,omitempty"`
+	Revision             string `json:"revision,omitempty"`
+	MaxRelationshipDepth int    `json:"max_relationship_depth,omitempty"`
 }
 
 type wasmError struct {
-	Message string `json:"message"`
+	Message  string `json:"message"`
+	Stage    string `json:"stage,omitempty"`
+	Code     string `json:"code,omitempty"`
+	Hint     string `json:"hint,omitempty"`
+	Position int    `json:"position"` // -1 means no position
 }
 
 type wasmResult struct {
@@ -38,6 +45,7 @@ var callbacks []js.Func
 func main() {
 	apiObject := map[string]any{
 		"loadSchemaInfoJSON":                  callback(loadSchemaInfoJSON),
+		"completeCatalogJSON":                 callback(completeCatalogJSON),
 		"compileCatalogJSON":                  callback(compileCatalogJSON),
 		"compileDocumentCatalogJSON":          callback(compileDocumentCatalogJSON),
 		"compileAndVerifyCatalogJSON":         callback(compileAndVerifyCatalogJSON),
@@ -90,12 +98,13 @@ func compileCatalogJSON(_ js.Value, args []js.Value) any {
 		Data:     []byte(catalogJSON),
 		Revision: options.Revision,
 	}
-	compilation, err := api.Compile(
+	compilation, err := api.CompileWithOptions(
 		context.Background(),
 		provider,
 		catalogRef(options),
 		strings.TrimSpace(args[1].String()),
 		defaultString(options.FieldAlias, "result"),
+		api.CompileOptions{MaxRelationshipDepth: options.MaxRelationshipDepth},
 	)
 	if err != nil {
 		return resultError(err)
@@ -104,6 +113,40 @@ func compileCatalogJSON(_ js.Value, args []js.Value) any {
 	return toJSValue(wasmResult{
 		OK:          true,
 		Compilation: compilation,
+	})
+}
+
+func completeCatalogJSON(_ js.Value, args []js.Value) any {
+	catalogJSON, options, err := parseCatalogArgs(args)
+	if err != nil {
+		return resultError(err)
+	}
+	if len(args) < 2 {
+		return resultErrorString("completeCatalogJSON requires a source argument")
+	}
+	if len(args) < 3 {
+		return resultErrorString("completeCatalogJSON requires an offset argument")
+	}
+
+	provider := catalog.JSONProvider{
+		Data:     []byte(catalogJSON),
+		Revision: options.Revision,
+	}
+	snapshot, err := provider.Load(context.Background(), catalogRef(options))
+	if err != nil {
+		return resultError(err)
+	}
+
+	items := tooling.Complete(
+		snapshot.Catalog,
+		snapshot.Catalog.BaseTable,
+		args[1].String(),
+		args[2].Int(),
+		tooling.CompletionOptions{MaxRelationshipDepth: options.MaxRelationshipDepth},
+	)
+	return toJSValue(map[string]any{
+		"ok":    true,
+		"items": items,
 	})
 }
 
@@ -120,11 +163,12 @@ func compileDocumentCatalogJSON(_ js.Value, args []js.Value) any {
 		Data:     []byte(catalogJSON),
 		Revision: options.Revision,
 	}
-	compilation, err := api.CompileDocument(
+	compilation, err := api.CompileDocumentWithOptions(
 		context.Background(),
 		provider,
 		catalogRef(options),
 		strings.TrimSpace(args[1].String()),
+		api.CompileOptions{MaxRelationshipDepth: options.MaxRelationshipDepth},
 	)
 	if err != nil {
 		return resultError(err)
@@ -149,13 +193,14 @@ func compileAndVerifyCatalogJSON(_ js.Value, args []js.Value) any {
 		Data:     []byte(catalogJSON),
 		Revision: options.Revision,
 	}
-	compilation, verificationResult, err := api.CompileAndVerify(
+	compilation, verificationResult, err := api.CompileAndVerifyWithOptions(
 		context.Background(),
 		provider,
 		catalogRef(options),
 		strings.TrimSpace(args[1].String()),
 		defaultString(options.FieldAlias, "result"),
 		verify.Mode(defaultString(options.VerifyMode, string(verify.ModeSyntax))),
+		api.CompileOptions{MaxRelationshipDepth: options.MaxRelationshipDepth},
 	)
 	if err != nil {
 		return resultError(err)
@@ -181,12 +226,13 @@ func compileAndVerifyDocumentCatalogJSON(_ js.Value, args []js.Value) any {
 		Data:     []byte(catalogJSON),
 		Revision: options.Revision,
 	}
-	compilation, verificationResult, err := api.CompileAndVerifyDocument(
+	compilation, verificationResult, err := api.CompileAndVerifyDocumentWithOptions(
 		context.Background(),
 		provider,
 		catalogRef(options),
 		strings.TrimSpace(args[1].String()),
 		verify.Mode(defaultString(options.VerifyMode, string(verify.ModeSyntax))),
+		api.CompileOptions{MaxRelationshipDepth: options.MaxRelationshipDepth},
 	)
 	if err != nil {
 		return resultError(err)
@@ -252,11 +298,12 @@ func parseOptions(value js.Value) wasmOptions {
 	}
 
 	return wasmOptions{
-		BaseTable:  propertyString(value, "baseTable", "base_table"),
-		Namespace:  propertyString(value, "namespace"),
-		FieldAlias: propertyString(value, "fieldAlias", "field_alias"),
-		VerifyMode: propertyString(value, "verifyMode", "verify_mode"),
-		Revision:   propertyString(value, "revision"),
+		BaseTable:            propertyString(value, "baseTable", "base_table"),
+		Namespace:            propertyString(value, "namespace"),
+		FieldAlias:           propertyString(value, "fieldAlias", "field_alias"),
+		VerifyMode:           propertyString(value, "verifyMode", "verify_mode"),
+		Revision:             propertyString(value, "revision"),
+		MaxRelationshipDepth: propertyInt(value, "maxRelationshipDepth", "max_relationship_depth"),
 	}
 }
 
@@ -275,6 +322,16 @@ func propertyString(value js.Value, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func propertyInt(value js.Value, keys ...string) int {
+	for _, key := range keys {
+		prop := value.Get(key)
+		if !prop.IsUndefined() && !prop.IsNull() && prop.Type() == js.TypeNumber {
+			return prop.Int()
+		}
+	}
+	return 0
 }
 
 func jsonArgString(value js.Value) (string, error) {
@@ -300,13 +357,21 @@ func toJSValue(value any) js.Value {
 }
 
 func resultError(err error) js.Value {
-	return resultErrorString(err.Error())
+	we := &wasmError{Message: err.Error(), Position: -1}
+	if de, ok := diagnostic.AsError(err); ok {
+		we.Message = de.Message
+		we.Stage = de.Stage
+		we.Code = de.Code
+		we.Hint = de.Hint
+		we.Position = de.Position
+	}
+	return toJSValue(wasmResult{OK: false, Error: we})
 }
 
 func resultErrorString(message string) js.Value {
 	return toJSValue(wasmResult{
 		OK:    false,
-		Error: &wasmError{Message: message},
+		Error: &wasmError{Message: message, Position: -1},
 	})
 }
 
