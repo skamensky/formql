@@ -2,11 +2,25 @@ package diagnostic
 
 import "strings"
 
-// ClosestSuggestion returns the nearest candidate using a conservative edit-distance threshold.
+// ClosestSuggestion returns the nearest candidate using prefix matching first,
+// then a conservative edit-distance threshold.
 func ClosestSuggestion(target string, candidates []string) (string, bool) {
 	normalizedTarget := strings.ToLower(strings.TrimSpace(target))
 	if normalizedTarget == "" {
 		return "", false
+	}
+
+	// Prefix match: if the target is an unambiguous prefix of exactly one candidate, return it.
+	var prefixMatch string
+	prefixCount := 0
+	for _, candidate := range candidates {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(candidate)), normalizedTarget) {
+			prefixMatch = candidate
+			prefixCount++
+		}
+	}
+	if prefixCount == 1 {
+		return prefixMatch, true
 	}
 
 	best := ""
