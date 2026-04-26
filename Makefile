@@ -11,7 +11,7 @@ NODE ?= node
 FORMQL_WEB_ADDR ?= 127.0.0.1:8090
 FORMQL_WEB_URL ?= http://$(FORMQL_WEB_ADDR)
 
-.PHONY: go-test db-up db-down db-reset ext-build ext-build-local ext-db-up ext-db-down ext-docker-build ext-e2e catalog ast document-ast hir document-hir typecheck document-typecheck query query-offline document-query document-query-offline verify-sql verify-query verify-document-query lsp lsp-offline typecheck-offline document-typecheck-offline vscode-extension-package vscode-extension-install vscode-extension-reinstall wasm-build wasm-smoke web-backend web-smoke
+.PHONY: go-test db-up db-down db-reset ext-build ext-build-local ext-db-up ext-db-down ext-docker-build ext-e2e catalog ast document-ast hir document-hir typecheck document-typecheck query query-offline document-query document-query-offline verify-sql verify-query verify-document-query lsp lsp-offline typecheck-offline document-typecheck-offline vscode-extension-package vscode-extension-install vscode-extension-reinstall wasm-build wasm-smoke web-fe web-fe-watch web-typecheck web-backend web-smoke
 
 go-test:
 	go test ./...
@@ -69,10 +69,10 @@ verify-document-query:
 	go run ./cmd/formqlc verify-document-query -database-url "$(DATABASE_URL)" -table "$(BASE_TABLE)" -formula '$(FORMULA)'
 
 lsp:
-	go run ./cmd/formqlc lsp -database-url "$(DATABASE_URL)" -table "$(BASE_TABLE)"
+	go run ./cmd/formqlc lsp -database-url "$(DATABASE_URL)"
 
 lsp-offline:
-	go run ./cmd/formqlc lsp -schema "$(SCHEMA_PATH)" -table "$(BASE_TABLE)"
+	go run ./cmd/formqlc lsp -schema "$(SCHEMA_PATH)"
 
 typecheck-offline:
 	go run ./cmd/formqlc typecheck -schema "$(SCHEMA_PATH)" -table "$(BASE_TABLE)" -formula '$(FORMULA)'
@@ -118,6 +118,7 @@ ext-build-local:
 
 wasm-build:
 	mkdir -p "$(WASM_OUT_DIR)"
+	chmod u+w "$(WASM_OUT_DIR)/wasm_exec.js" 2>/dev/null || true
 	rm -f "$(WASM_OUT_DIR)/wasm_exec.js"
 	cp "$(WASM_EXEC_JS)" "$(WASM_OUT_DIR)/wasm_exec.js"
 	GOOS=js GOARCH=wasm go build -o "$(WASM_OUT_DIR)/formql.wasm" ./pkg/formql/wasm
@@ -125,11 +126,24 @@ wasm-build:
 wasm-smoke: wasm-build
 	"$(NODE)" web/wasm/smoke.cjs
 
-web-backend: wasm-build
+web-fe:
+	cd web/playground && npm run build
+
+web-fe-watch:
+	cd web/playground && npm run watch
+
+web-typecheck:
+	cd web/playground && npm run typecheck
+
+web-backend: wasm-build web-fe
 	go run ./cmd/formqlweb -root "." -addr "$(FORMQL_WEB_ADDR)"
 
 web-smoke: wasm-build
 	set -e; \
+	if [ -z "$$FORMQL_WEB_DATABASE_URL" ] && ! bash -lc 'exec 3<>/dev/tcp/127.0.0.1/54329' >/dev/null 2>&1; then \
+		docker compose up -d formula-db >/dev/null; \
+		until [ "$$(docker inspect --format '{{.State.Health.Status}}' formql-db 2>/dev/null)" = "healthy" ]; do sleep 1; done; \
+	fi; \
 	go run ./cmd/formqlweb -root "." -addr "$(FORMQL_WEB_ADDR)" > /tmp/formqlweb.log 2>&1 & \
 	pid=$$!; \
 	trap 'kill $$pid 2>/dev/null || true' EXIT; \
