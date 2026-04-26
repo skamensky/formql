@@ -1,9 +1,10 @@
+// formql: table=rental_offer
 offer_status,
-customer_rel.email AS customer_email,
-pickup_branch_rel.name AS pickup_branch,
-dropoff_branch_rel.name AS dropoff_branch,
-vehicle_rel.model_name AS vehicle_model,
-vehicle_rel.class_code AS vehicle_class,
+customer_id__rel.email AS customer_email,
+pickup_branch_id__rel.name AS pickup_branch,
+dropoff_branch_id__rel.name AS dropoff_branch,
+vehicle_id__rel.model_name AS vehicle_model,
+vehicle_id__rel.class_code AS vehicle_class,
 quoted_total,
 ROUND(quoted_total / quoted_days, 2) AS quoted_daily_rate_check,
-IF(pickup_branch_rel.region = dropoff_branch_rel.region, "same-region", "cross-region") AS route_region
+IF(pickup_branch_id__rel.region = dropoff_branch_id__rel.region, "same-region", "cross-region") AS route_region

@@ -1,1 +1,2 @@
-NOT(offer_rel.requires_deposit = FALSE)
+// formql: table=rental_contract
+NOT(offer_id__rel.requires_deposit = FALSE)

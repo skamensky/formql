@@ -1,1 +1,2 @@
-IF(customer_rel.repeat_customer = TRUE, "loyal-renter", IF(vendor_rel.category = "auction", "wholesale", "retail"))
+// formql: table=resale_sale
+IF(customer_id__rel.repeat_customer = TRUE, "loyal-renter", IF(vendor_id__rel.category = "auction", "wholesale", "retail"))

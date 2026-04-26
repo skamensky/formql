@@ -1,1 +1,2 @@
-IF(ISNULL(customer_rel.email), "missing-email", "has-email")
+// formql: table=rental_contract
+IF(ISNULL(customer_id__rel.email), "missing-email", "has-email")

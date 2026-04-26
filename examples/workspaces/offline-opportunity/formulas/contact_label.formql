@@ -1,1 +1,2 @@
-IF(customer_rel.email = NULL, "missing-email", customer_rel.first_name & " " & customer_rel.last_name)
+// formql: table=opportunity
+IF(customer_id__rel.email = NULL, "missing-email", customer_id__rel.first_name & " " & customer_id__rel.last_name)

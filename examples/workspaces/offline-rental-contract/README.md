@@ -14,7 +14,7 @@ The workspace points the FormQL extension at:
 
 - the local compiler via `go run`
 - the shared rental-agency schema in `examples/catalogs`
-- the `rental_contract` base table
+- per-file table metadata declared with `// formql: table=rental_contract`
 
 Open any file under `formulas/` to test:
 

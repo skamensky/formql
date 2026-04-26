@@ -14,13 +14,13 @@ The workspace points the FormQL extension at:
 
 - the local compiler via `go run`
 - the shared rental-agency schema in `examples/catalogs`
-- the `rental_offer` base table
+- per-file table metadata declared with `// formql: table=rental_offer`
 
 Open any file under `formulas/` to test:
 
 - quote-stage relationship traversal across customer, vehicle, rep, and branch paths
 - quoted-rate math and deposit logic
-- same-schema behavior from a third base table, not just contracts and resale
+- same-schema behavior from a third table, not just contracts and resale
 
 Open files under `documents/` to test multi-field query documents for quote-stage views.
 

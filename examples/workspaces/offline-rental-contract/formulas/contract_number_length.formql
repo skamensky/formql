@@ -1,1 +1,2 @@
+// formql: table=rental_contract
 LEN(contract_number)

@@ -1,1 +1,2 @@
-rep_rel.manager_rel.last_name & " / " & rep_rel.branch_rel.city
+// formql: table=resale_sale
+rep_id__rel.manager_id__rel.last_name & " / " & rep_id__rel.branch_id__rel.city

@@ -1,1 +1,2 @@
+// formql: table=rental_offer
 IF(AND(discount_amount > 0, quoted_total >= 1000, requires_deposit = TRUE), "manager-review", "standard")

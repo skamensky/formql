@@ -1,2 +1,3 @@
+// formql: table=resale_sale
 /* Vehicle lineage path through purchase and vendor ownership. */
-vehicle_rel.model_name & " / " & STRING(vehicle_rel.model_year) & " / " & vehicle_rel.purchase_rel.vendor_rel.name
+vehicle_id__rel.model_name & " / " & STRING(vehicle_id__rel.model_year) & " / " & vehicle_id__rel.purchase_id__rel.vendor_id__rel.name

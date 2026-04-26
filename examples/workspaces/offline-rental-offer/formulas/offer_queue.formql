@@ -1,1 +1,2 @@
+// formql: table=rental_offer
 IF(OR(offer_status = "quoted", offer_status = "sent"), "open-queue", "closed")

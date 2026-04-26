@@ -1,1 +1,2 @@
+// formql: table=rental_contract
 IF(actual_days <= 3, "short-haul", "standard")

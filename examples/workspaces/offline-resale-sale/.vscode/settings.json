@@ -4,6 +4,5 @@
     "run",
     "${workspaceFolder}/../../../cmd/formqlc"
   ],
-  "formql.schemaPath": "${workspaceFolder}/../../catalogs/rental-agency.formql.schema.json",
-  "formql.baseTable": "resale_sale"
+  "formql.schemaPath": "${workspaceFolder}/../../catalogs/rental-agency.formql.schema.json"
 }

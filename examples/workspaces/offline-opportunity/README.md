@@ -14,7 +14,7 @@ The workspace settings already point the extension at:
 
 - the local compiler via `go run`
 - the bundled schema file
-- the `opportunity` base table
+- per-file table metadata declared with `// formql: table=opportunity`
 
 Open any file under `formulas/` to test:
 

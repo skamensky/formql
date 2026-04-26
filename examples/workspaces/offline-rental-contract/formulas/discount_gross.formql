@@ -1,1 +1,2 @@
-ROUND(offer_rel.quoted_daily_rate * offer_rel.quoted_days, 2)
+// formql: table=rental_contract
+ROUND(offer_id__rel.quoted_daily_rate * offer_id__rel.quoted_days, 2)

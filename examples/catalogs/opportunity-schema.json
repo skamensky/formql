@@ -1,46 +1,89 @@
 {
   "base_table": "opportunity",
+  "base_schema": "crm",
   "tables": [
     {
       "name": "opportunity",
       "columns": [
-        {"name": "id", "type": "number"},
-        {"name": "customer_id", "type": "number"},
-        {"name": "listing_id", "type": "number"},
-        {"name": "offer_amount", "type": "number"},
-        {"name": "stage", "type": "string"},
-        {"name": "closing_date", "type": "date"}
+        {
+          "name": "id",
+          "type": "number"
+        },
+        {
+          "name": "customer_id",
+          "type": "number"
+        },
+        {
+          "name": "listing_id",
+          "type": "number"
+        },
+        {
+          "name": "offer_amount",
+          "type": "number"
+        },
+        {
+          "name": "stage",
+          "type": "string"
+        },
+        {
+          "name": "closing_date",
+          "type": "date"
+        }
       ]
     },
     {
       "name": "customer",
       "columns": [
-        {"name": "id", "type": "number"},
-        {"name": "first_name", "type": "string"},
-        {"name": "last_name", "type": "string"},
-        {"name": "email", "type": "string"},
-        {"name": "assigned_rep_id", "type": "number"}
+        {
+          "name": "id",
+          "type": "number"
+        },
+        {
+          "name": "first_name",
+          "type": "string"
+        },
+        {
+          "name": "last_name",
+          "type": "string"
+        },
+        {
+          "name": "email",
+          "type": "string"
+        },
+        {
+          "name": "assigned_rep_id",
+          "type": "number"
+        }
       ]
     },
     {
       "name": "rep",
       "columns": [
-        {"name": "id", "type": "number"},
-        {"name": "name", "type": "string"},
-        {"name": "region", "type": "string"}
+        {
+          "name": "id",
+          "type": "number"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        }
       ]
     }
   ],
   "relationships": [
     {
-      "name": "customer",
+      "name": "customer_id__rel",
       "from_table": "opportunity",
       "to_table": "customer",
       "join_column": "customer_id",
       "target_column": "id"
     },
     {
-      "name": "assigned_rep",
+      "name": "assigned_rep_id__rel",
       "from_table": "customer",
       "to_table": "rep",
       "join_column": "assigned_rep_id",

@@ -1,1 +1,2 @@
-pickup_branch_rel.name & " -> " & dropoff_branch_rel.name & " / " & vehicle_rel.class_code
+// formql: table=rental_offer
+pickup_branch_id__rel.name & " -> " & dropoff_branch_id__rel.name & " / " & vehicle_id__rel.class_code

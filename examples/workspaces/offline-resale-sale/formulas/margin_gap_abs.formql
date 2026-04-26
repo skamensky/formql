@@ -1,1 +1,2 @@
+// formql: table=resale_sale
 ABS(list_price - sale_price)

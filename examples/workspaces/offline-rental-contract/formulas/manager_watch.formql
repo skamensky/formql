@@ -1,1 +1,2 @@
-rep_rel.manager_rel.first_name & " @ " & rep_rel.branch_rel.name
+// formql: table=rental_contract
+rep_id__rel.manager_id__rel.first_name & " @ " & rep_id__rel.branch_id__rel.name

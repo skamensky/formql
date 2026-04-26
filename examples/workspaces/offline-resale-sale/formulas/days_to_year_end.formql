@@ -1,1 +1,2 @@
+// formql: table=resale_sale
 DATE("2026-12-31") - sale_date

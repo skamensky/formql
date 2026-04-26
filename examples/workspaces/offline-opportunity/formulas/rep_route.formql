@@ -1,1 +1,2 @@
-IF(offer_amount > 500000, customer_rel.assigned_rep_rel.name, "self-serve")
+// formql: table=opportunity
+IF(offer_amount > 500000, customer_id__rel.assigned_rep_id__rel.name, "self-serve")

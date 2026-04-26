@@ -1,1 +1,2 @@
-IF(vendor_rel.category <> "auction", "direct", "auction")
+// formql: table=resale_sale
+IF(vendor_id__rel.category <> "auction", "direct", "auction")

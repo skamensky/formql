@@ -1,175 +1,521 @@
 {
   "base_table": "rental_contract",
+  "base_schema": "rental",
   "tables": [
     {
       "name": "branch",
       "columns": [
-        {"name": "id", "type": "number"},
-        {"name": "name", "type": "string"},
-        {"name": "city", "type": "string"},
-        {"name": "region", "type": "string"},
-        {"name": "branch_type", "type": "string"},
-        {"name": "opened_on", "type": "date"},
-        {"name": "active", "type": "boolean"},
-        {"name": "manager_rep_id", "type": "number"}
+        {
+          "name": "id",
+          "type": "number"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "city",
+          "type": "string"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "branch_type",
+          "type": "string"
+        },
+        {
+          "name": "opened_on",
+          "type": "date"
+        },
+        {
+          "name": "active",
+          "type": "boolean"
+        },
+        {
+          "name": "manager_rep_id",
+          "type": "number"
+        }
       ]
     },
     {
       "name": "rep",
       "columns": [
-        {"name": "id", "type": "number"},
-        {"name": "branch_id", "type": "number"},
-        {"name": "manager_id", "type": "number"},
-        {"name": "first_name", "type": "string"},
-        {"name": "last_name", "type": "string"},
-        {"name": "email", "type": "string"},
-        {"name": "role", "type": "string"},
-        {"name": "hire_date", "type": "date"},
-        {"name": "active", "type": "boolean"},
-        {"name": "quarterly_quota", "type": "number"},
-        {"name": "used_car_certified", "type": "boolean"}
+        {
+          "name": "id",
+          "type": "number"
+        },
+        {
+          "name": "branch_id",
+          "type": "number"
+        },
+        {
+          "name": "manager_id",
+          "type": "number"
+        },
+        {
+          "name": "first_name",
+          "type": "string"
+        },
+        {
+          "name": "last_name",
+          "type": "string"
+        },
+        {
+          "name": "email",
+          "type": "string"
+        },
+        {
+          "name": "role",
+          "type": "string"
+        },
+        {
+          "name": "hire_date",
+          "type": "date"
+        },
+        {
+          "name": "active",
+          "type": "boolean"
+        },
+        {
+          "name": "quarterly_quota",
+          "type": "number"
+        },
+        {
+          "name": "used_car_certified",
+          "type": "boolean"
+        }
       ]
     },
     {
       "name": "vendor",
       "columns": [
-        {"name": "id", "type": "number"},
-        {"name": "name", "type": "string"},
-        {"name": "category", "type": "string"},
-        {"name": "home_branch_id", "type": "number"},
-        {"name": "rating", "type": "number"},
-        {"name": "preferred_vendor", "type": "boolean"},
-        {"name": "support_email", "type": "string"}
+        {
+          "name": "id",
+          "type": "number"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "category",
+          "type": "string"
+        },
+        {
+          "name": "home_branch_id",
+          "type": "number"
+        },
+        {
+          "name": "rating",
+          "type": "number"
+        },
+        {
+          "name": "preferred_vendor",
+          "type": "boolean"
+        },
+        {
+          "name": "support_email",
+          "type": "string"
+        }
       ]
     },
     {
       "name": "fleet",
       "columns": [
-        {"name": "id", "type": "number"},
-        {"name": "branch_id", "type": "number"},
-        {"name": "vendor_id", "type": "number"},
-        {"name": "code", "type": "string"},
-        {"name": "segment", "type": "string"},
-        {"name": "active_vehicle_count", "type": "number"},
-        {"name": "reserve_vehicle_count", "type": "number"},
-        {"name": "utilization_target", "type": "number"}
+        {
+          "name": "id",
+          "type": "number"
+        },
+        {
+          "name": "branch_id",
+          "type": "number"
+        },
+        {
+          "name": "vendor_id",
+          "type": "number"
+        },
+        {
+          "name": "code",
+          "type": "string"
+        },
+        {
+          "name": "segment",
+          "type": "string"
+        },
+        {
+          "name": "active_vehicle_count",
+          "type": "number"
+        },
+        {
+          "name": "reserve_vehicle_count",
+          "type": "number"
+        },
+        {
+          "name": "utilization_target",
+          "type": "number"
+        }
       ]
     },
     {
       "name": "vehicle_purchase",
       "columns": [
-        {"name": "id", "type": "number"},
-        {"name": "vendor_id", "type": "number"},
-        {"name": "branch_id", "type": "number"},
-        {"name": "rep_id", "type": "number"},
-        {"name": "fleet_id", "type": "number"},
-        {"name": "vin", "type": "string"},
-        {"name": "purchase_date", "type": "date"},
-        {"name": "purchase_price", "type": "number"},
-        {"name": "acquisition_channel", "type": "string"},
-        {"name": "warranty_months", "type": "number"}
+        {
+          "name": "id",
+          "type": "number"
+        },
+        {
+          "name": "vendor_id",
+          "type": "number"
+        },
+        {
+          "name": "branch_id",
+          "type": "number"
+        },
+        {
+          "name": "rep_id",
+          "type": "number"
+        },
+        {
+          "name": "fleet_id",
+          "type": "number"
+        },
+        {
+          "name": "vin",
+          "type": "string"
+        },
+        {
+          "name": "purchase_date",
+          "type": "date"
+        },
+        {
+          "name": "purchase_price",
+          "type": "number"
+        },
+        {
+          "name": "acquisition_channel",
+          "type": "string"
+        },
+        {
+          "name": "warranty_months",
+          "type": "number"
+        }
       ]
     },
     {
       "name": "vehicle",
       "columns": [
-        {"name": "id", "type": "number"},
-        {"name": "fleet_id", "type": "number"},
-        {"name": "vendor_id", "type": "number"},
-        {"name": "purchase_id", "type": "number"},
-        {"name": "current_branch_id", "type": "number"},
-        {"name": "vin", "type": "string"},
-        {"name": "plate_number", "type": "string"},
-        {"name": "model_name", "type": "string"},
-        {"name": "model_year", "type": "number"},
-        {"name": "class_code", "type": "string"},
-        {"name": "status", "type": "string"},
-        {"name": "odometer_km", "type": "number"},
-        {"name": "acquired_cost", "type": "number"},
-        {"name": "estimated_resale_value", "type": "number"}
+        {
+          "name": "id",
+          "type": "number"
+        },
+        {
+          "name": "fleet_id",
+          "type": "number"
+        },
+        {
+          "name": "vendor_id",
+          "type": "number"
+        },
+        {
+          "name": "purchase_id",
+          "type": "number"
+        },
+        {
+          "name": "current_branch_id",
+          "type": "number"
+        },
+        {
+          "name": "vin",
+          "type": "string"
+        },
+        {
+          "name": "plate_number",
+          "type": "string"
+        },
+        {
+          "name": "model_name",
+          "type": "string"
+        },
+        {
+          "name": "model_year",
+          "type": "number"
+        },
+        {
+          "name": "class_code",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        },
+        {
+          "name": "odometer_km",
+          "type": "number"
+        },
+        {
+          "name": "acquired_cost",
+          "type": "number"
+        },
+        {
+          "name": "estimated_resale_value",
+          "type": "number"
+        }
       ]
     },
     {
       "name": "customer",
       "columns": [
-        {"name": "id", "type": "number"},
-        {"name": "home_branch_id", "type": "number"},
-        {"name": "assigned_rep_id", "type": "number"},
-        {"name": "referred_vendor_id", "type": "number"},
-        {"name": "last_contract_id", "type": "number"},
-        {"name": "first_name", "type": "string"},
-        {"name": "last_name", "type": "string"},
-        {"name": "email", "type": "string"},
-        {"name": "status", "type": "string"},
-        {"name": "loyalty_tier", "type": "string"},
-        {"name": "prior_contract_count", "type": "number"},
-        {"name": "repeat_customer", "type": "boolean"},
-        {"name": "lifetime_rental_days", "type": "number"},
-        {"name": "total_spend", "type": "number"},
-        {"name": "last_contract_date", "type": "date"}
+        {
+          "name": "id",
+          "type": "number"
+        },
+        {
+          "name": "home_branch_id",
+          "type": "number"
+        },
+        {
+          "name": "assigned_rep_id",
+          "type": "number"
+        },
+        {
+          "name": "referred_vendor_id",
+          "type": "number"
+        },
+        {
+          "name": "last_contract_id",
+          "type": "number"
+        },
+        {
+          "name": "first_name",
+          "type": "string"
+        },
+        {
+          "name": "last_name",
+          "type": "string"
+        },
+        {
+          "name": "email",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        },
+        {
+          "name": "loyalty_tier",
+          "type": "string"
+        },
+        {
+          "name": "prior_contract_count",
+          "type": "number"
+        },
+        {
+          "name": "repeat_customer",
+          "type": "boolean"
+        },
+        {
+          "name": "lifetime_rental_days",
+          "type": "number"
+        },
+        {
+          "name": "total_spend",
+          "type": "number"
+        },
+        {
+          "name": "last_contract_date",
+          "type": "date"
+        }
       ]
     },
     {
       "name": "rental_offer",
       "columns": [
-        {"name": "id", "type": "number"},
-        {"name": "customer_id", "type": "number"},
-        {"name": "vehicle_id", "type": "number"},
-        {"name": "rep_id", "type": "number"},
-        {"name": "pickup_branch_id", "type": "number"},
-        {"name": "dropoff_branch_id", "type": "number"},
-        {"name": "quoted_daily_rate", "type": "number"},
-        {"name": "quoted_total", "type": "number"},
-        {"name": "quoted_days", "type": "number"},
-        {"name": "offer_status", "type": "string"},
-        {"name": "discount_amount", "type": "number"},
-        {"name": "requires_deposit", "type": "boolean"},
-        {"name": "created_on", "type": "date"}
+        {
+          "name": "id",
+          "type": "number"
+        },
+        {
+          "name": "customer_id",
+          "type": "number"
+        },
+        {
+          "name": "vehicle_id",
+          "type": "number"
+        },
+        {
+          "name": "rep_id",
+          "type": "number"
+        },
+        {
+          "name": "pickup_branch_id",
+          "type": "number"
+        },
+        {
+          "name": "dropoff_branch_id",
+          "type": "number"
+        },
+        {
+          "name": "quoted_daily_rate",
+          "type": "number"
+        },
+        {
+          "name": "quoted_total",
+          "type": "number"
+        },
+        {
+          "name": "quoted_days",
+          "type": "number"
+        },
+        {
+          "name": "offer_status",
+          "type": "string"
+        },
+        {
+          "name": "discount_amount",
+          "type": "number"
+        },
+        {
+          "name": "requires_deposit",
+          "type": "boolean"
+        },
+        {
+          "name": "created_on",
+          "type": "date"
+        }
       ]
     },
     {
       "name": "rental_contract",
       "columns": [
-        {"name": "id", "type": "number"},
-        {"name": "offer_id", "type": "number"},
-        {"name": "customer_id", "type": "number"},
-        {"name": "vehicle_id", "type": "number"},
-        {"name": "branch_id", "type": "number"},
-        {"name": "rep_id", "type": "number"},
-        {"name": "contract_number", "type": "string"},
-        {"name": "start_date", "type": "date"},
-        {"name": "end_date", "type": "date"},
-        {"name": "actual_total", "type": "number"},
-        {"name": "actual_days", "type": "number"},
-        {"name": "mileage_allowance_km", "type": "number"},
-        {"name": "status", "type": "string"},
-        {"name": "extension_count", "type": "number"},
-        {"name": "damage_fee", "type": "number"},
-        {"name": "returned_late", "type": "boolean"}
+        {
+          "name": "id",
+          "type": "number"
+        },
+        {
+          "name": "offer_id",
+          "type": "number"
+        },
+        {
+          "name": "customer_id",
+          "type": "number"
+        },
+        {
+          "name": "vehicle_id",
+          "type": "number"
+        },
+        {
+          "name": "branch_id",
+          "type": "number"
+        },
+        {
+          "name": "rep_id",
+          "type": "number"
+        },
+        {
+          "name": "contract_number",
+          "type": "string"
+        },
+        {
+          "name": "start_date",
+          "type": "date"
+        },
+        {
+          "name": "end_date",
+          "type": "date"
+        },
+        {
+          "name": "actual_total",
+          "type": "number"
+        },
+        {
+          "name": "actual_days",
+          "type": "number"
+        },
+        {
+          "name": "mileage_allowance_km",
+          "type": "number"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        },
+        {
+          "name": "extension_count",
+          "type": "number"
+        },
+        {
+          "name": "damage_fee",
+          "type": "number"
+        },
+        {
+          "name": "returned_late",
+          "type": "boolean"
+        }
       ]
     },
     {
       "name": "resale_sale",
       "columns": [
-        {"name": "id", "type": "number"},
-        {"name": "vehicle_id", "type": "number"},
-        {"name": "customer_id", "type": "number"},
-        {"name": "branch_id", "type": "number"},
-        {"name": "rep_id", "type": "number"},
-        {"name": "vendor_id", "type": "number"},
-        {"name": "sale_date", "type": "date"},
-        {"name": "list_price", "type": "number"},
-        {"name": "sale_price", "type": "number"},
-        {"name": "margin_amount", "type": "number"},
-        {"name": "warranty_months", "type": "number"},
-        {"name": "buyer_type", "type": "string"},
-        {"name": "trade_in", "type": "boolean"}
+        {
+          "name": "id",
+          "type": "number"
+        },
+        {
+          "name": "vehicle_id",
+          "type": "number"
+        },
+        {
+          "name": "customer_id",
+          "type": "number"
+        },
+        {
+          "name": "branch_id",
+          "type": "number"
+        },
+        {
+          "name": "rep_id",
+          "type": "number"
+        },
+        {
+          "name": "vendor_id",
+          "type": "number"
+        },
+        {
+          "name": "sale_date",
+          "type": "date"
+        },
+        {
+          "name": "list_price",
+          "type": "number"
+        },
+        {
+          "name": "sale_price",
+          "type": "number"
+        },
+        {
+          "name": "margin_amount",
+          "type": "number"
+        },
+        {
+          "name": "warranty_months",
+          "type": "number"
+        },
+        {
+          "name": "buyer_type",
+          "type": "string"
+        },
+        {
+          "name": "trade_in",
+          "type": "boolean"
+        }
       ]
     }
   ],
   "relationships": [
     {
-      "name": "manager_rep",
+      "name": "manager_rep_id__rel",
       "from_table": "branch",
       "to_table": "rep",
       "join_column": "manager_rep_id",
@@ -178,7 +524,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "branch",
+      "name": "branch_id__rel",
       "from_table": "rep",
       "to_table": "branch",
       "join_column": "branch_id",
@@ -187,7 +533,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "manager",
+      "name": "manager_id__rel",
       "from_table": "rep",
       "to_table": "rep",
       "join_column": "manager_id",
@@ -196,7 +542,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "home_branch",
+      "name": "home_branch_id__rel",
       "from_table": "vendor",
       "to_table": "branch",
       "join_column": "home_branch_id",
@@ -205,7 +551,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "branch",
+      "name": "branch_id__rel",
       "from_table": "fleet",
       "to_table": "branch",
       "join_column": "branch_id",
@@ -214,7 +560,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "vendor",
+      "name": "vendor_id__rel",
       "from_table": "fleet",
       "to_table": "vendor",
       "join_column": "vendor_id",
@@ -223,7 +569,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "vendor",
+      "name": "vendor_id__rel",
       "from_table": "vehicle_purchase",
       "to_table": "vendor",
       "join_column": "vendor_id",
@@ -232,7 +578,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "branch",
+      "name": "branch_id__rel",
       "from_table": "vehicle_purchase",
       "to_table": "branch",
       "join_column": "branch_id",
@@ -241,7 +587,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "rep",
+      "name": "rep_id__rel",
       "from_table": "vehicle_purchase",
       "to_table": "rep",
       "join_column": "rep_id",
@@ -250,7 +596,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "fleet",
+      "name": "fleet_id__rel",
       "from_table": "vehicle_purchase",
       "to_table": "fleet",
       "join_column": "fleet_id",
@@ -259,7 +605,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "fleet",
+      "name": "fleet_id__rel",
       "from_table": "vehicle",
       "to_table": "fleet",
       "join_column": "fleet_id",
@@ -268,7 +614,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "vendor",
+      "name": "vendor_id__rel",
       "from_table": "vehicle",
       "to_table": "vendor",
       "join_column": "vendor_id",
@@ -277,7 +623,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "purchase",
+      "name": "purchase_id__rel",
       "from_table": "vehicle",
       "to_table": "vehicle_purchase",
       "join_column": "purchase_id",
@@ -286,7 +632,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "current_branch",
+      "name": "current_branch_id__rel",
       "from_table": "vehicle",
       "to_table": "branch",
       "join_column": "current_branch_id",
@@ -295,7 +641,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "home_branch",
+      "name": "home_branch_id__rel",
       "from_table": "customer",
       "to_table": "branch",
       "join_column": "home_branch_id",
@@ -304,7 +650,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "assigned_rep",
+      "name": "assigned_rep_id__rel",
       "from_table": "customer",
       "to_table": "rep",
       "join_column": "assigned_rep_id",
@@ -313,7 +659,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "referred_vendor",
+      "name": "referred_vendor_id__rel",
       "from_table": "customer",
       "to_table": "vendor",
       "join_column": "referred_vendor_id",
@@ -322,7 +668,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "last_contract",
+      "name": "last_contract_id__rel",
       "from_table": "customer",
       "to_table": "rental_contract",
       "join_column": "last_contract_id",
@@ -331,7 +677,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "customer",
+      "name": "customer_id__rel",
       "from_table": "rental_offer",
       "to_table": "customer",
       "join_column": "customer_id",
@@ -340,7 +686,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "vehicle",
+      "name": "vehicle_id__rel",
       "from_table": "rental_offer",
       "to_table": "vehicle",
       "join_column": "vehicle_id",
@@ -349,7 +695,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "rep",
+      "name": "rep_id__rel",
       "from_table": "rental_offer",
       "to_table": "rep",
       "join_column": "rep_id",
@@ -358,7 +704,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "pickup_branch",
+      "name": "pickup_branch_id__rel",
       "from_table": "rental_offer",
       "to_table": "branch",
       "join_column": "pickup_branch_id",
@@ -367,7 +713,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "dropoff_branch",
+      "name": "dropoff_branch_id__rel",
       "from_table": "rental_offer",
       "to_table": "branch",
       "join_column": "dropoff_branch_id",
@@ -376,7 +722,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "offer",
+      "name": "offer_id__rel",
       "from_table": "rental_contract",
       "to_table": "rental_offer",
       "join_column": "offer_id",
@@ -385,7 +731,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "customer",
+      "name": "customer_id__rel",
       "from_table": "rental_contract",
       "to_table": "customer",
       "join_column": "customer_id",
@@ -394,7 +740,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "vehicle",
+      "name": "vehicle_id__rel",
       "from_table": "rental_contract",
       "to_table": "vehicle",
       "join_column": "vehicle_id",
@@ -403,7 +749,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "branch",
+      "name": "branch_id__rel",
       "from_table": "rental_contract",
       "to_table": "branch",
       "join_column": "branch_id",
@@ -412,7 +758,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "rep",
+      "name": "rep_id__rel",
       "from_table": "rental_contract",
       "to_table": "rep",
       "join_column": "rep_id",
@@ -421,7 +767,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "vehicle",
+      "name": "vehicle_id__rel",
       "from_table": "resale_sale",
       "to_table": "vehicle",
       "join_column": "vehicle_id",
@@ -430,7 +776,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "customer",
+      "name": "customer_id__rel",
       "from_table": "resale_sale",
       "to_table": "customer",
       "join_column": "customer_id",
@@ -439,7 +785,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "branch",
+      "name": "branch_id__rel",
       "from_table": "resale_sale",
       "to_table": "branch",
       "join_column": "branch_id",
@@ -448,7 +794,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "rep",
+      "name": "rep_id__rel",
       "from_table": "resale_sale",
       "to_table": "rep",
       "join_column": "rep_id",
@@ -457,7 +803,7 @@
       "target_column_indexed": true
     },
     {
-      "name": "vendor",
+      "name": "vendor_id__rel",
       "from_table": "resale_sale",
       "to_table": "vendor",
       "join_column": "vendor_id",

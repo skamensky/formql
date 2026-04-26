@@ -1,1 +1,2 @@
+// formql: table=rental_contract
 ROUND(-damage_fee, 2)

@@ -1,1 +1,2 @@
-NULLVALUE(branch_rel.region, "unknown-region") & " / " & branch_rel.city
+// formql: table=rental_contract
+NULLVALUE(branch_id__rel.region, "unknown-region") & " / " & branch_id__rel.city

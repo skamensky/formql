@@ -1,1 +1,2 @@
+// formql: table=resale_sale
 IF(OR(trade_in = TRUE, warranty_months < 6), "review", "clean")

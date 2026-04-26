@@ -1,5 +1,6 @@
 {
   "base_table": "opportunity",
+  "base_schema": "crm",
   "tables": [
     {
       "name": "opportunity",
@@ -75,14 +76,14 @@
   ],
   "relationships": [
     {
-      "name": "customer",
+      "name": "customer_id__rel",
       "from_table": "opportunity",
       "to_table": "customer",
       "join_column": "customer_id",
       "target_column": "id"
     },
     {
-      "name": "assigned_rep",
+      "name": "assigned_rep_id__rel",
       "from_table": "customer",
       "to_table": "rep",
       "join_column": "assigned_rep_id",

@@ -1,1 +1,2 @@
+// formql: table=rental_offer
 TODAY() - created_on

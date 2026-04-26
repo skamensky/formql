@@ -1,1 +1,2 @@
+// formql: table=rental_offer
 ROUND(quoted_total / quoted_days, 2)

@@ -1,6 +1,6 @@
 # Offline Resale Sale Workspace
 
-This workspace reuses the same rental-agency schema but switches the base table to used-vehicle resale. It is the quickest way to test FormQL against a different slice of the same domain model and confirm that the compiler is not hard-wired to one base table.
+This workspace reuses the same rental-agency schema with used-vehicle resale formulas. It is the quickest way to test FormQL against a different slice of the same domain model and confirm that the compiler is not hard-wired to one table.
 
 ## Open in VS Code
 
@@ -14,7 +14,7 @@ The workspace points the FormQL extension at:
 
 - the local compiler via `go run`
 - the shared rental-agency schema in `examples/catalogs`
-- the `resale_sale` base table
+- per-file table metadata declared with `// formql: table=resale_sale`
 
 Open any file under `formulas/` to test:
 

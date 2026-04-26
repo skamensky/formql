@@ -1,1 +1,2 @@
+// formql: table=resale_sale
 DATE(sale_date) + warranty_months - sale_date

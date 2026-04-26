@@ -1,1 +1,2 @@
-UPPER(vehicle_rel.class_code) & "-" & LOWER(branch_rel.region)
+// formql: table=rental_contract
+UPPER(vehicle_id__rel.class_code) & "-" & LOWER(branch_id__rel.region)

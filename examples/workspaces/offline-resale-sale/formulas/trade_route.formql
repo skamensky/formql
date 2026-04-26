@@ -1,1 +1,2 @@
+// formql: table=resale_sale
 IF(buyer_type != "fleet-transfer", "consumer", "fleet")

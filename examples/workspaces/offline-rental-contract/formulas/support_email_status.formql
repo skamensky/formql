@@ -1,1 +1,2 @@
-IF(ISBLANK(TRIM(vehicle_rel.vendor_rel.support_email)), "needs-vendor-followup", "ready")
+// formql: table=rental_contract
+IF(ISBLANK(TRIM(vehicle_id__rel.vendor_id__rel.support_email)), "needs-vendor-followup", "ready")
