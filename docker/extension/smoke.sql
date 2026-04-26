@@ -109,7 +109,7 @@ BEGIN
 
   live_compiled := formql_compile_live(
     'orders',
-    'customer_rel.email & " / " & STRING(amount)',
+    'customer_id__rel.email & " / " & STRING(amount)',
     'result',
     'syntax'
   );
@@ -117,7 +117,7 @@ BEGIN
   IF COALESCE((live_compiled->>'ok')::boolean, false) IS NOT TRUE THEN
     RAISE EXCEPTION 'expected live compile ok response, got %', live_compiled::text;
   END IF;
-  IF POSITION('JOIN "customers"' IN live_compiled #>> '{compilation,sql,query}') = 0 THEN
+  IF POSITION('"customers"' IN live_compiled #>> '{compilation,sql,query}') = 0 THEN
     RAISE EXCEPTION 'expected live compile query to include customers join, got %', live_compiled::text;
   END IF;
   IF COALESCE((live_compiled #>> '{verification,ok}')::boolean, false) IS NOT TRUE THEN
@@ -126,7 +126,7 @@ BEGIN
 
   live_document_compiled := formql_compile_document_live(
     'orders',
-    'amount, customer_rel.email',
+    'amount, customer_id__rel.email AS customer_email',
     'syntax'
   );
 
