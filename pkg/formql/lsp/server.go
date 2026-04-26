@@ -16,7 +16,9 @@ import (
 	"github.com/skamensky/formql/pkg/formql"
 	"github.com/skamensky/formql/pkg/formql/catalog"
 	"github.com/skamensky/formql/pkg/formql/diagnostic"
+	"github.com/skamensky/formql/pkg/formql/filemeta"
 	"github.com/skamensky/formql/pkg/formql/schema"
+	"github.com/skamensky/formql/pkg/formql/tooling"
 )
 
 const (
@@ -31,14 +33,12 @@ type Server struct {
 	in          *bufio.Reader
 	out         io.Writer
 	provider    catalog.Provider
-	baseTable   string
 	docs        map[string]string
 	schemaIndex *schemaFileIndex
 }
 
 // Config holds editor-facing configuration for the language server.
 type Config struct {
-	BaseTable  string
 	SchemaPath string
 }
 
@@ -49,7 +49,6 @@ func NewServer(in io.Reader, out io.Writer, provider catalog.Provider, config Co
 		in:          bufio.NewReader(in),
 		out:         out,
 		provider:    provider,
-		baseTable:   strings.ToLower(strings.TrimSpace(config.BaseTable)),
 		docs:        make(map[string]string),
 		schemaIndex: index,
 	}
@@ -74,12 +73,6 @@ type outgoingRPCMessage struct {
 type rpcError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
-}
-
-type initializeParams struct {
-	InitializationOptions struct {
-		BaseTable string `json:"baseTable"`
-	} `json:"initializationOptions"`
 }
 
 type textDocumentItem struct {
@@ -243,14 +236,6 @@ func (s *Server) Run(ctx context.Context) error {
 }
 
 func (s *Server) handleInitialize(message incomingRPCMessage) error {
-	var params initializeParams
-	if len(message.Params) > 0 {
-		_ = json.Unmarshal(message.Params, &params)
-	}
-	if params.InitializationOptions.BaseTable != "" {
-		s.baseTable = strings.ToLower(params.InitializationOptions.BaseTable)
-	}
-
 	result := map[string]any{
 		"capabilities": map[string]any{
 			"textDocumentSync":   1,
@@ -312,7 +297,17 @@ func (s *Server) handleCompletion(ctx context.Context, message incomingRPCMessag
 		})
 	}
 
-	snapshot, err := s.provider.Load(ctx, catalog.Ref{BaseTable: s.baseTable})
+	text := s.docs[params.TextDocument.URI]
+	baseTable, err := resolveFileBaseTable(params.TextDocument.URI, text)
+	if err != nil {
+		return s.writeMessage(outgoingRPCMessage{
+			JSONRPC: "2.0",
+			ID:      message.ID,
+			Result:  []completionItem{},
+		})
+	}
+
+	snapshot, err := s.provider.Load(ctx, catalog.Ref{BaseTable: baseTable})
 	if err != nil {
 		return s.writeMessage(outgoingRPCMessage{
 			JSONRPC: "2.0",
@@ -325,8 +320,7 @@ func (s *Server) handleCompletion(ctx context.Context, message incomingRPCMessag
 	}
 	catalog := snapshot.Catalog
 
-	text := s.docs[params.TextDocument.URI]
-	items := completionItems(catalog, effectiveBaseTable(s.baseTable, catalog), text, params.Position)
+	items := completionItems(catalog, baseTable, text, params.Position)
 	return s.writeMessage(outgoingRPCMessage{
 		JSONRPC: "2.0",
 		ID:      message.ID,
@@ -347,7 +341,17 @@ func (s *Server) handleDefinition(ctx context.Context, message incomingRPCMessag
 		})
 	}
 
-	snapshot, err := s.provider.Load(ctx, catalog.Ref{BaseTable: s.baseTable})
+	text := s.docs[params.TextDocument.URI]
+	baseTable, err := resolveFileBaseTable(params.TextDocument.URI, text)
+	if err != nil {
+		return s.writeMessage(outgoingRPCMessage{
+			JSONRPC: "2.0",
+			ID:      message.ID,
+			Result:  []lspLocation{},
+		})
+	}
+
+	snapshot, err := s.provider.Load(ctx, catalog.Ref{BaseTable: baseTable})
 	if err != nil {
 		return s.writeMessage(outgoingRPCMessage{
 			JSONRPC: "2.0",
@@ -360,7 +364,6 @@ func (s *Server) handleDefinition(ctx context.Context, message incomingRPCMessag
 	}
 	catalog := snapshot.Catalog
 
-	text := s.docs[params.TextDocument.URI]
 	symbol, _, ok := symbolAtPosition(text, params.Position)
 	if !ok {
 		return s.writeMessage(outgoingRPCMessage{
@@ -370,7 +373,7 @@ func (s *Server) handleDefinition(ctx context.Context, message incomingRPCMessag
 		})
 	}
 
-	location := s.definitionForSymbol(catalog, effectiveBaseTable(s.baseTable, catalog), symbol)
+	location := s.definitionForSymbol(catalog, baseTable, symbol)
 	if location == nil {
 		return s.writeMessage(outgoingRPCMessage{
 			JSONRPC: "2.0",
@@ -399,7 +402,17 @@ func (s *Server) handleHover(ctx context.Context, message incomingRPCMessage) er
 		})
 	}
 
-	snapshot, err := s.provider.Load(ctx, catalog.Ref{BaseTable: s.baseTable})
+	text := s.docs[params.TextDocument.URI]
+	baseTable, err := resolveFileBaseTable(params.TextDocument.URI, text)
+	if err != nil {
+		return s.writeMessage(outgoingRPCMessage{
+			JSONRPC: "2.0",
+			ID:      message.ID,
+			Result:  jsonNull,
+		})
+	}
+
+	snapshot, err := s.provider.Load(ctx, catalog.Ref{BaseTable: baseTable})
 	if err != nil {
 		return s.writeMessage(outgoingRPCMessage{
 			JSONRPC: "2.0",
@@ -412,7 +425,6 @@ func (s *Server) handleHover(ctx context.Context, message incomingRPCMessage) er
 	}
 	catalog := snapshot.Catalog
 
-	text := s.docs[params.TextDocument.URI]
 	symbol, symbolRange, ok := symbolAtPosition(text, params.Position)
 	if !ok {
 		return s.writeMessage(outgoingRPCMessage{
@@ -422,7 +434,7 @@ func (s *Server) handleHover(ctx context.Context, message incomingRPCMessage) er
 		})
 	}
 
-	hover := hoverForSymbol(catalog, effectiveBaseTable(s.baseTable, catalog), symbol)
+	hover := hoverForSymbol(catalog, baseTable, symbol)
 	if hover == "" {
 		return s.writeMessage(outgoingRPCMessage{
 			JSONRPC: "2.0",
@@ -462,7 +474,19 @@ func (s *Server) handleDidClose(raw json.RawMessage) error {
 }
 
 func (s *Server) publishDiagnostics(ctx context.Context, uri, text string) error {
-	snapshot, err := s.provider.Load(ctx, catalog.Ref{BaseTable: s.baseTable})
+	baseTable, err := resolveFileBaseTable(uri, text)
+	if err != nil {
+		return s.writeMessage(outgoingRPCMessage{
+			JSONRPC: "2.0",
+			Method:  "textDocument/publishDiagnostics",
+			Params: publishDiagnosticsParams{
+				URI:         uri,
+				Diagnostics: []lspDiagnostic{fileMetadataDiagnostic(err)},
+			},
+		})
+	}
+
+	snapshot, err := s.provider.Load(ctx, catalog.Ref{BaseTable: baseTable})
 	if err != nil {
 		diag := []lspDiagnostic{{
 			Range: diagnosticRange{
@@ -470,8 +494,8 @@ func (s *Server) publishDiagnostics(ctx context.Context, uri, text string) error
 				End:   diagnosticPosition{Line: 0, Character: 0},
 			},
 			Severity: severityError,
-			Code:     "catalog_load_failed",
-			Source:   "catalog",
+			Code:     "base_table_unresolved",
+			Source:   "metadata",
 			Message:  err.Error(),
 		}}
 		return s.writeMessage(outgoingRPCMessage{
@@ -503,6 +527,39 @@ func (s *Server) publishDiagnostics(ctx context.Context, uri, text string) error
 			Diagnostics: diagnostics,
 		},
 	})
+}
+
+func resolveFileBaseTable(uri, text string) (string, error) {
+	if metadata, ok, err := filemeta.ParseSource(text); err != nil {
+		return "", err
+	} else if ok && metadata.BaseTable() != "" {
+		return metadata.BaseTable(), nil
+	}
+
+	path := URIToPath(uri)
+	if path != "" {
+		if metadata, _, ok, err := filemeta.LoadSidecar(path); err != nil {
+			return "", err
+		} else if ok && metadata.BaseTable() != "" {
+			return metadata.BaseTable(), nil
+		}
+		return "", fmt.Errorf("missing FormQL table metadata; add a leading comment like // formql: table=rental_contract or adjacent %s", filemeta.SidecarPaths(path)[0])
+	}
+
+	return "", fmt.Errorf("missing FormQL table metadata; add a leading comment like // formql: table=rental_contract")
+}
+
+func fileMetadataDiagnostic(err error) lspDiagnostic {
+	return lspDiagnostic{
+		Range: diagnosticRange{
+			Start: diagnosticPosition{Line: 0, Character: 0},
+			End:   diagnosticPosition{Line: 0, Character: 0},
+		},
+		Severity: severityError,
+		Code:     "base_table_metadata_missing",
+		Source:   "metadata",
+		Message:  err.Error(),
+	}
 }
 
 func convertErrorDiagnostic(text string, err error) lspDiagnostic {
@@ -584,95 +641,22 @@ func offsetToPosition(text string, offset int) diagnosticPosition {
 }
 
 func completionItems(catalog schema.Explorer, baseTable, text string, position diagnosticPosition) []completionItem {
-	if relationshipChain, ok := completionContext(text, position); ok {
-		return relationshipCompletionItems(catalog, baseTable, relationshipChain)
-	}
-
-	items := make([]completionItem, 0, 64)
-	for _, column := range catalog.ColumnsForTable(baseTable) {
-		items = append(items, completionItem{
-			Label:  column.Name,
-			Kind:   5,
-			Detail: string(column.Type),
+	items := tooling.Complete(
+		catalog,
+		baseTable,
+		text,
+		offsetForPosition(text, position),
+		tooling.CompletionOptions{},
+	)
+	result := make([]completionItem, 0, len(items))
+	for _, item := range items {
+		result = append(result, completionItem{
+			Label:  item.Label,
+			Kind:   int(item.Kind),
+			Detail: item.Detail,
 		})
 	}
-
-	for _, relationship := range catalog.RelationshipsFrom(baseTable) {
-		items = append(items, completionItem{
-			Label:  relationship.Name + "_rel",
-			Kind:   6,
-			Detail: relationship.ToTable,
-		})
-	}
-
-	for _, fn := range builtinFunctionNames() {
-		items = append(items, completionItem{
-			Label:  fn,
-			Kind:   3,
-			Detail: "function",
-		})
-	}
-
-	return items
-}
-
-func effectiveBaseTable(explicit string, catalog schema.Resolver) string {
-	if normalized := strings.ToLower(strings.TrimSpace(explicit)); normalized != "" {
-		return normalized
-	}
-	return strings.ToLower(strings.TrimSpace(catalog.BaseTableName()))
-}
-
-func relationshipCompletionItems(catalog schema.Explorer, baseTable string, chain []string) []completionItem {
-	currentTable := strings.ToLower(baseTable)
-	for _, relationshipName := range chain {
-		relationship, ok := catalog.Relationship(currentTable, relationshipName)
-		if !ok {
-			return []completionItem{}
-		}
-		currentTable = strings.ToLower(relationship.ToTable)
-	}
-
-	items := make([]completionItem, 0, 32)
-	for _, column := range catalog.ColumnsForTable(currentTable) {
-		items = append(items, completionItem{
-			Label:  column.Name,
-			Kind:   5,
-			Detail: string(column.Type),
-		})
-	}
-
-	for _, relationship := range catalog.RelationshipsFrom(currentTable) {
-		items = append(items, completionItem{
-			Label:  relationship.Name + "_rel",
-			Kind:   6,
-			Detail: relationship.ToTable,
-		})
-	}
-
-	return items
-}
-
-func completionContext(text string, position diagnosticPosition) ([]string, bool) {
-	prefix := textPrefixAtPosition(text, position)
-	if prefix == "" {
-		return nil, false
-	}
-
-	segments := strings.Split(prefix, ".")
-	if len(segments) < 2 {
-		return nil, false
-	}
-
-	relationshipChain := make([]string, 0, len(segments)-1)
-	for _, segment := range segments[:len(segments)-1] {
-		if !strings.HasSuffix(segment, "_rel") {
-			return nil, false
-		}
-		relationshipChain = append(relationshipChain, strings.TrimSuffix(segment, "_rel"))
-	}
-
-	return relationshipChain, true
+	return result
 }
 
 func textPrefixAtPosition(text string, position diagnosticPosition) string {

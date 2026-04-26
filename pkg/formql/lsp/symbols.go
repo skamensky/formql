@@ -6,6 +6,7 @@ import (
 
 	"github.com/skamensky/formql/pkg/formql/builtin"
 	"github.com/skamensky/formql/pkg/formql/schema"
+	"github.com/skamensky/formql/pkg/formql/tooling"
 )
 
 type symbolKind string
@@ -76,7 +77,7 @@ func hoverForSymbol(catalog schema.Explorer, baseTable string, symbol symbolRef)
 			return ""
 		}
 		return fmt.Sprintf(
-			"```formql\n%s_rel\n```\n\nRelationship from `%s` to `%s`.\n\nJoin: `%s.%s -> %s.%s`",
+			"```formql\n%s\n```\n\nRelationship from `%s` to `%s`.\n\nJoin: `%s.%s -> %s.%s`",
 			symbol.Name,
 			fromTable,
 			relationship.ToTable,
@@ -101,15 +102,7 @@ func hoverForSymbol(catalog schema.Explorer, baseTable string, symbol symbolRef)
 }
 
 func tableForChain(catalog schema.Explorer, baseTable string, chain []string) (string, bool) {
-	currentTable := strings.ToLower(strings.TrimSpace(baseTable))
-	for _, relationshipName := range chain {
-		relationship, ok := catalog.Relationship(currentTable, relationshipName)
-		if !ok {
-			return "", false
-		}
-		currentTable = strings.ToLower(relationship.ToTable)
-	}
-	return currentTable, true
+	return tooling.ResolveRelationshipChain(catalog, baseTable, chain, tooling.CompletionOptions{})
 }
 
 func symbolAtPosition(text string, position diagnosticPosition) (symbolRef, diagnosticRange, bool) {
@@ -156,34 +149,19 @@ func symbolAtPosition(text string, position diagnosticPosition) (symbolRef, diag
 	}
 
 	if segmentIndex < len(segments)-1 {
-		if !strings.HasSuffix(selected, "_rel") {
-			return symbolRef{}, diagnosticRange{}, false
-		}
-		chain := relationshipChainFromSegments(segments[:segmentIndex])
-		if chain == nil {
+		chain, ok := normalizedSegments(segments[:segmentIndex])
+		if !ok {
 			return symbolRef{}, diagnosticRange{}, false
 		}
 		return symbolRef{
 			Kind:  symbolRelationship,
-			Name:  strings.TrimSuffix(strings.ToLower(selected), "_rel"),
+			Name:  strings.ToLower(selected),
 			Chain: chain,
 		}, selectedRange, true
 	}
 
-	if strings.HasSuffix(selected, "_rel") {
-		chain := relationshipChainFromSegments(segments[:segmentIndex])
-		if chain == nil {
-			return symbolRef{}, diagnosticRange{}, false
-		}
-		return symbolRef{
-			Kind:  symbolRelationship,
-			Name:  strings.TrimSuffix(strings.ToLower(selected), "_rel"),
-			Chain: chain,
-		}, selectedRange, true
-	}
-
-	relationshipChain := relationshipChainFromSegments(segments[:len(segments)-1])
-	if relationshipChain == nil {
+	relationshipChain, ok := normalizedSegments(segments[:len(segments)-1])
+	if !ok {
 		return symbolRef{}, diagnosticRange{}, false
 	}
 	return symbolRef{
@@ -193,15 +171,16 @@ func symbolAtPosition(text string, position diagnosticPosition) (symbolRef, diag
 	}, selectedRange, true
 }
 
-func relationshipChainFromSegments(segments []string) []string {
+func normalizedSegments(segments []string) ([]string, bool) {
 	chain := make([]string, 0, len(segments))
 	for _, segment := range segments {
-		if !strings.HasSuffix(segment, "_rel") {
-			return nil
+		trimmed := strings.ToLower(strings.TrimSpace(segment))
+		if trimmed == "" {
+			return nil, false
 		}
-		chain = append(chain, strings.TrimSuffix(strings.ToLower(segment), "_rel"))
+		chain = append(chain, trimmed)
 	}
-	return chain
+	return chain, true
 }
 
 func dottedSpanAtPosition(text string, start, end int) (int, int) {

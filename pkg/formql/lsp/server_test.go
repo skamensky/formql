@@ -57,7 +57,7 @@ func TestServerProvidesCompletionDefinitionAndHover(t *testing.T) {
   ],
   "relationships": [
     {
-      "name": "customer",
+      "name": "customer_id__rel",
       "from_table": "opportunity",
       "to_table": "customer",
       "join_column": "customer_id",
@@ -85,11 +85,6 @@ func TestServerProvidesCompletionDefinitionAndHover(t *testing.T) {
 		"jsonrpc": "2.0",
 		"id":      1,
 		"method":  "initialize",
-		"params": map[string]any{
-			"initializationOptions": map[string]any{
-				"baseTable": "opportunity",
-			},
-		},
 	})
 	writeRPC(t, input, map[string]any{
 		"jsonrpc": "2.0",
@@ -97,7 +92,7 @@ func TestServerProvidesCompletionDefinitionAndHover(t *testing.T) {
 		"params": map[string]any{
 			"textDocument": map[string]any{
 				"uri":  "file:///tmp/example.formql",
-				"text": "customer_rel.first_name",
+				"text": "// formql: table=opportunity\ncustomer_id__rel.first_name",
 			},
 		},
 	})
@@ -110,8 +105,8 @@ func TestServerProvidesCompletionDefinitionAndHover(t *testing.T) {
 				"uri": "file:///tmp/example.formql",
 			},
 			"position": map[string]any{
-				"line":      0,
-				"character": 13,
+				"line":      1,
+				"character": 20,
 			},
 		},
 	})
@@ -124,7 +119,7 @@ func TestServerProvidesCompletionDefinitionAndHover(t *testing.T) {
 				"uri": "file:///tmp/example.formql",
 			},
 			"position": map[string]any{
-				"line":      0,
+				"line":      1,
 				"character": 17,
 			},
 		},
@@ -138,7 +133,7 @@ func TestServerProvidesCompletionDefinitionAndHover(t *testing.T) {
 				"uri": "file:///tmp/example.formql",
 			},
 			"position": map[string]any{
-				"line":      0,
+				"line":      1,
 				"character": 2,
 			},
 		},
@@ -155,7 +150,6 @@ func TestServerProvidesCompletionDefinitionAndHover(t *testing.T) {
 
 	output := bytes.NewBuffer(nil)
 	server := NewServer(bytes.NewReader(input.Bytes()), output, &testProvider{catalog: &catalog}, Config{
-		BaseTable:  "opportunity",
 		SchemaPath: schemaPath,
 	})
 	if err := server.Run(context.Background()); err != nil {
@@ -204,7 +198,7 @@ func TestDocumentCompletionContextAfterComma(t *testing.T) {
 		},
 		Relationships: []schema.Relationship{
 			{
-				Name:         "customer",
+				Name:         "customer_id__rel",
 				FromTable:    "opportunity",
 				ToTable:      "customer",
 				JoinColumn:   "customer_id",
@@ -220,13 +214,86 @@ func TestDocumentCompletionContextAfterComma(t *testing.T) {
 	if !hasCompletionLabel(baseItems, "offer_amount") {
 		t.Fatalf("document field completion missing base column: %#v", baseItems)
 	}
-	if !hasCompletionLabel(baseItems, "customer_rel") {
+	if !hasCompletionLabel(baseItems, "customer_id__rel") {
 		t.Fatalf("document field completion missing relationship: %#v", baseItems)
 	}
 
-	relatedItems := completionItems(catalog, "opportunity", "offer_amount, customer_rel.", diagnosticPosition{Line: 0, Character: len("offer_amount, customer_rel.")})
+	relatedItems := completionItems(catalog, "opportunity", "offer_amount, customer_id__rel.", diagnosticPosition{Line: 0, Character: len("offer_amount, customer_id__rel.")})
 	if !hasCompletionLabel(relatedItems, "first_name") {
 		t.Fatalf("document relationship completion missing related column: %#v", relatedItems)
+	}
+}
+
+func TestServerPublishesFileLevelDiagnosticWhenBaseTableMetadataMissing(t *testing.T) {
+	schemaFile := `{
+  "base_table": "opportunity",
+  "tables": [
+    {
+      "name": "opportunity",
+      "columns": [
+        {
+          "name": "offer_amount",
+          "type": "number"
+        }
+      ]
+    }
+  ],
+  "relationships": []
+}`
+
+	var catalog schema.Catalog
+	if err := json.Unmarshal([]byte(schemaFile), &catalog); err != nil {
+		t.Fatalf("decode catalog: %v", err)
+	}
+	if err := catalog.Validate(); err != nil {
+		t.Fatalf("validate catalog: %v", err)
+	}
+
+	input := bytes.NewBuffer(nil)
+	writeRPC(t, input, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "initialize",
+	})
+	writeRPC(t, input, map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "textDocument/didOpen",
+		"params": map[string]any{
+			"textDocument": map[string]any{
+				"uri":  "file:///tmp/missing-metadata.formql",
+				"text": "offer_amount + 1",
+			},
+		},
+	})
+	writeRPC(t, input, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      2,
+		"method":  "shutdown",
+	})
+	writeRPC(t, input, map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "exit",
+	})
+
+	output := bytes.NewBuffer(nil)
+	server := NewServer(bytes.NewReader(input.Bytes()), output, &testProvider{catalog: &catalog}, Config{})
+	if err := server.Run(context.Background()); err != nil {
+		t.Fatalf("run server: %v", err)
+	}
+
+	messages := readRPCMessages(t, output.Bytes())
+	var diagnostics rawRPCMessage
+	for _, message := range messages {
+		if message.Method == "textDocument/publishDiagnostics" {
+			diagnostics = message
+			break
+		}
+	}
+	if len(diagnostics.Params) == 0 {
+		t.Fatal("expected publishDiagnostics message")
+	}
+	if !strings.Contains(string(diagnostics.Params), "base_table_metadata_missing") {
+		t.Fatalf("diagnostic missing metadata code: %s", string(diagnostics.Params))
 	}
 }
 
@@ -266,11 +333,6 @@ func TestServerHoverWithoutSymbolReturnsExplicitNullResult(t *testing.T) {
 		"jsonrpc": "2.0",
 		"id":      1,
 		"method":  "initialize",
-		"params": map[string]any{
-			"initializationOptions": map[string]any{
-				"baseTable": "opportunity",
-			},
-		},
 	})
 	writeRPC(t, input, map[string]any{
 		"jsonrpc": "2.0",
@@ -278,7 +340,7 @@ func TestServerHoverWithoutSymbolReturnsExplicitNullResult(t *testing.T) {
 		"params": map[string]any{
 			"textDocument": map[string]any{
 				"uri":  "file:///tmp/example.formql",
-				"text": "offer_amount + 1",
+				"text": "// formql: table=opportunity\noffer_amount + 1",
 			},
 		},
 	})
@@ -291,7 +353,7 @@ func TestServerHoverWithoutSymbolReturnsExplicitNullResult(t *testing.T) {
 				"uri": "file:///tmp/example.formql",
 			},
 			"position": map[string]any{
-				"line":      0,
+				"line":      1,
 				"character": 13,
 			},
 		},
@@ -308,7 +370,6 @@ func TestServerHoverWithoutSymbolReturnsExplicitNullResult(t *testing.T) {
 
 	output := bytes.NewBuffer(nil)
 	server := NewServer(bytes.NewReader(input.Bytes()), output, &testProvider{catalog: &catalog}, Config{
-		BaseTable:  "opportunity",
 		SchemaPath: schemaPath,
 	})
 	if err := server.Run(context.Background()); err != nil {
