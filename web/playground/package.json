@@ -1,0 +1,20 @@
+{
+  "name": "formql-playground",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/App.tsx --bundle --outfile=dist/bundle.js --platform=browser --target=es2020 --jsx=transform",
+    "watch": "esbuild src/App.tsx --bundle --outfile=dist/bundle.js --platform=browser --target=es2020 --jsx=transform --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.1",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.0"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}
