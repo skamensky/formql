@@ -33,7 +33,7 @@ async function main() {
 
   const compileResult = globalThis.FormQL.compileCatalogJSON(
     catalogJSON,
-    'customer_rel.email & " / " & STRING(actual_total)',
+    'customer_id__rel.email & " / " & STRING(actual_total)',
     {
       baseTable: "rental_contract",
       fieldAlias: "result",
@@ -46,9 +46,24 @@ async function main() {
     throw new Error("compiled SQL did not reference rental_contract");
   }
 
+  const completionResult = globalThis.FormQL.completeCatalogJSON(
+    catalogJSON,
+    "customer_id__rel.",
+    "customer_id__rel.".length,
+    {
+      baseTable: "rental_contract",
+    },
+  );
+  if (!completionResult.ok) {
+    throw new Error(`completion failed: ${completionResult.error.message}`);
+  }
+  if (!completionResult.items.some((item) => item.label === "email")) {
+    throw new Error("completion items did not include related email field");
+  }
+
   const documentResult = globalThis.FormQL.compileDocumentCatalogJSON(
     catalogJSON,
-    'actual_total, customer_rel.email, vehicle_rel.model_name AS vehicle_model',
+    'actual_total, customer_id__rel.email AS customer_email, vehicle_id__rel.model_name AS vehicle_model',
     {
       baseTable: "rental_contract",
     },
@@ -84,7 +99,7 @@ async function main() {
 
   const documentVerifyResult = globalThis.FormQL.compileAndVerifyDocumentCatalogJSON(
     catalogJSON,
-    "actual_total, customer_rel.email",
+    "actual_total, customer_id__rel.email AS customer_email",
     {
       baseTable: "rental_contract",
       verifyMode: "syntax",

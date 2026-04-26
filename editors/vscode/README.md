@@ -24,10 +24,11 @@ Offline schema mode is the default recommendation because the language server ca
 {
   "formql.serverPath": "go",
   "formql.serverArgs": ["run", "${workspaceFolder}/../../../cmd/formqlc"],
-  "formql.schemaPath": "${workspaceFolder}/schema/opportunity.formql.schema.json",
-  "formql.baseTable": "opportunity"
+  "formql.schemaPath": "${workspaceFolder}/schema/opportunity.formql.schema.json"
 }
 ```
+
+Each `.formql` file declares its table with a leading metadata comment such as `// formql: table=opportunity`, or an adjacent `.meta.json` sidecar.
 
 ## About `.fql`
 

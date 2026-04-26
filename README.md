@@ -51,6 +51,15 @@ Bytecode is not ruled out, but it would be another backend or lower IR stage. It
 
 The typechecker is intentionally driven by a real catalog contract so the compiler, CLI, and LSP all exercise the same schema-resolution code paths.
 
+File-based commands can resolve their table from source metadata instead of a workspace default:
+
+```formql
+// formql: table=rental_contract
+actual_total, customer.email
+```
+
+The supported file-level forms are a leading comment directive (`formql:`, `@formql`, or `formql-meta:` with `key=value` params) or an adjacent `.meta.json` sidecar such as `contract_overview.meta.json`. The `table`/`base_table` value is required for `-formula-file` and `-document-file`; inline `-formula` and `-document` commands still require `-table`.
+
 ## Shared catalog shape
 
 Catalog loading is now centered on one provider contract:
@@ -79,6 +88,8 @@ The repo now includes a local VS Code extension in [`editors/vscode`](./editors/
 
 The fastest live demos are the bundled rental-agency workspaces at [`examples/workspaces/offline-rental-offer`](./examples/workspaces/offline-rental-offer/README.md), [`examples/workspaces/offline-rental-contract`](./examples/workspaces/offline-rental-contract/README.md), and [`examples/workspaces/offline-resale-sale`](./examples/workspaces/offline-resale-sale/README.md). They use `go run` plus a checked-in schema file, so users do not need a running database to see the editor features work. The `formulas/` directories are now a broader language corpus, not just a couple of demo snippets: they are compiled in tests and deliberately cover the current builtin/operator surface.
 
+The LSP does not use a folder naming convention or workspace-level base table. Each `.formql` file must declare its table in source metadata or an adjacent `.meta.json`; if the table cannot be resolved, the server publishes a file-level diagnostic.
+
 ## WASM
 
 The repo also ships a browser/Node wasm bundle built from the same Go compiler and catalog packages:
@@ -91,11 +102,14 @@ make wasm-smoke
 The JS surface is:
 
 - `FormQL.loadSchemaInfoJSON(catalogJSON, options?)`
+- `FormQL.completeCatalogJSON(catalogJSON, source, offset, options?)`
 - `FormQL.compileCatalogJSON(catalogJSON, formula, options?)`
 - `FormQL.compileDocumentCatalogJSON(catalogJSON, document, options?)`
 - `FormQL.compileAndVerifyCatalogJSON(catalogJSON, formula, options?)`
 - `FormQL.compileAndVerifyDocumentCatalogJSON(catalogJSON, document, options?)`
 - `FormQL.verifySQL(sql, options?)`
+
+The example frontend at `http://127.0.0.1:8090` now uses those wasm APIs for catalog-aware completion and compilation, then calls the backend for SQL verification and query execution against the seeded rental-agency sample database.
 
 Today, `js/wasm` builds support schema info, parsing, typechecking, and SQL generation. SQL verification itself is reported as unavailable in wasm builds, because the current offline verifier backend is not portable to browser runtimes yet.
 
@@ -116,10 +130,11 @@ make web-smoke
 ```bash
 make db-up
 make catalog BASE_TABLE=rental_contract
-make typecheck BASE_TABLE=rental_contract FORMULA='rep_rel.manager_rel.first_name & " @ " & rep_rel.branch_rel.name'
-make query BASE_TABLE=resale_sale FORMULA='vehicle_rel.model_name & " / " & STRING(vehicle_rel.model_year)'
-make document-query BASE_TABLE=rental_contract FORMULA='actual_total, customer_rel.email, vehicle_rel.model_name AS vehicle_model'
-make verify-query BASE_TABLE=resale_sale FORMULA='vehicle_rel.model_name & " / " & STRING(vehicle_rel.model_year)'
+make typecheck BASE_TABLE=rental_contract FORMULA='rep.manager.first_name & " @ " & rep.branch.name'
+make query BASE_TABLE=resale_sale FORMULA='vehicle.model_name & " / " & STRING(vehicle.model_year)'
+make document-query BASE_TABLE=rental_contract FORMULA='actual_total, customer.email, vehicle.model_name AS vehicle_model'
+go run ./cmd/formqlc document-query -schema examples/catalogs/rental-agency.formql.schema.json -document-file examples/workspaces/offline-rental-contract/documents/contract_overview.formql
+make verify-query BASE_TABLE=resale_sale FORMULA='vehicle.model_name & " / " & STRING(vehicle.model_year)'
 ```
 
 ## PostgreSQL extension

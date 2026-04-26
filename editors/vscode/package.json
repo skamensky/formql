@@ -68,11 +68,6 @@
           "type": "string",
           "default": "",
           "description": "PostgreSQL connection string for live catalog mode."
-        },
-        "formql.baseTable": {
-          "type": "string",
-          "default": "",
-          "description": "Base table for the current FormQL workspace. Required in live DB mode."
         }
       }
     }

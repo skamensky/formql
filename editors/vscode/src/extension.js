@@ -58,7 +58,6 @@ async function startClient(context) {
   const serverArgs = resolveConfiguredArgs(config.get("serverArgs", []), workspaceFolder);
   const schemaPath = resolveConfiguredPath(config.get("schemaPath", ""), workspaceFolder);
   const databaseUrl = resolveConfiguredValue(config.get("databaseUrl", ""), workspaceFolder);
-  const baseTable = resolveConfiguredValue(config.get("baseTable", ""), workspaceFolder);
 
   if (!schemaPath && !databaseUrl) {
     if (!warningShown) {
@@ -78,9 +77,6 @@ async function startClient(context) {
   if (databaseUrl) {
     commandArgs.push("-database-url", databaseUrl);
   }
-  if (baseTable) {
-    commandArgs.push("-table", baseTable);
-  }
 
   const serverOptions = {
     command: serverPath,
@@ -92,9 +88,7 @@ async function startClient(context) {
 
   const clientOptions = {
     documentSelector: [{ scheme: "file", language: "formql" }],
-    initializationOptions: {
-      baseTable,
-    },
+    initializationOptions: {},
     outputChannel,
   };
 

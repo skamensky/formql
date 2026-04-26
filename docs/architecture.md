@@ -32,6 +32,7 @@ That split is intentional:
 - [`pkg/formql/backend/postgres`](../pkg/formql/backend/postgres/render.go): PostgreSQL SQL renderer.
 - [`pkg/formql/api`](../pkg/formql/api/api.go): shared host-facing API for compile/verify flows.
 - [`pkg/formql/catalog`](../pkg/formql/catalog/provider.go): provider/cache/schema-info contracts.
+- [`pkg/formql/filemeta`](../pkg/formql/filemeta/filemeta.go): file-scoped metadata parser for table resolution.
 - [`pkg/formql/livecatalog`](../pkg/formql/livecatalog/postgres.go): live schema providers built on host-specific introspection sources.
 - [`pkg/formql/lsp`](../pkg/formql/lsp/server.go): minimal LSP server built on the same compiler/typechecker modules.
 - [`pkg/formql/wasm`](../pkg/formql/wasm/main.go): browser/Node entrypoint over the same Go engine.
@@ -84,12 +85,22 @@ That lets different hosts resolve schema differently without changing compiler l
 - the PostgreSQL extension can introspect in-process
 - browser callers can use checked-in catalog JSON through the same provider contracts
 
+## File Metadata
+
+Formula and document files do not inherit a base table from the workspace or folder name. File-based tooling resolves the table in this order:
+
+- leading source comments, for example `// formql: table=rental_contract`
+- adjacent sidecar JSON, for example `contract_overview.meta.json` with `{"table":"rental_contract"}`
+
+The comment parser accepts `formql:`, `@formql`, and `formql-meta:` directives with `key=value` parameters so the metadata surface can grow without changing the file discovery model. `table` and `base_table` are currently synonyms. Missing or unresolved table metadata is a file-level error in the LSP and a command error for `-formula-file`/`-document-file`.
+
 ## LSP
 
 The LSP server is intentionally thin in architecture, but now useful enough to drive editor workflows.
 
 - it reloads catalog information through `catalog.Provider`
 - it can also run in offline schema mode from a checked-in schema JSON file
+- it resolves the base table per document from source or sidecar metadata
 - it typechecks single-formula files and comma-separated documents by calling the same compiler modules as the CLI
 - it publishes parser/typechecker errors and warning diagnostics
 - it serves completions for columns, relationships, and functions
@@ -132,20 +143,40 @@ make catalog BASE_TABLE=rental_contract
 Typecheck a formula against the live database:
 
 ```bash
-make typecheck BASE_TABLE=rental_contract FORMULA='rep_rel.manager_rel.first_name & " @ " & rep_rel.branch_rel.name'
+make typecheck BASE_TABLE=rental_contract FORMULA='rep.manager.first_name & " @ " & rep.branch.name'
 ```
 
 Generate PostgreSQL SQL:
 
 ```bash
-make query BASE_TABLE=resale_sale FORMULA='vehicle_rel.model_name & " / " & STRING(vehicle_rel.model_year)'
+make query BASE_TABLE=resale_sale FORMULA='vehicle.model_name & " / " & STRING(vehicle.model_year)'
 ```
 
 Run the language server:
 
 ```bash
-make lsp BASE_TABLE=rental_contract
+make lsp
 ```
+
+## Join Alias Strategy
+
+The PostgreSQL renderer generates a stable alias for each joined table using FNV-64a over the relationship path:
+
+```
+rel_<016x hash of dot-joined path>
+```
+
+For example, the path `customer_id__rel.assigned_rep_id__rel` always produces `rel_0eac59992a21af53` regardless of query context.
+
+Sequential counters (`rel_0`, `rel_1`, ...) were considered and rejected:
+
+- **Unstable across queries** — the alias for a given path shifts whenever another join is added or removed elsewhere in the same document. Adding a new projected field can silently rename every alias.
+- **Order-dependent** — correct generation requires a guaranteed traversal order over all joins before any alias can be assigned.
+- **Breaks golden tests on unrelated changes** — any formula change that adds or removes a join invalidates every downstream alias in the golden file, not just the changed one.
+
+The hash is computed purely from the path, so the same relationship path always gets the same alias in every formula, every document, and every backend that renders from the same IR.
+
+PostgreSQL identifiers are limited to 63 bytes. Relationship paths can grow long enough to exceed this limit after multiple hops. The hash approach keeps every alias at a fixed 21 bytes (`rel_` + 16 hex digits), so alias collisions from truncation are impossible regardless of traversal depth.
 
 ## Verification Architecture
 

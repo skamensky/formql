@@ -81,7 +81,7 @@
       "patterns": [
         {
           "name": "variable.other.relationship.formql",
-          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*_rel\\b"
+          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*(?=\\.)"
         }
       ]
     },

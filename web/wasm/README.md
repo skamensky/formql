@@ -27,6 +27,7 @@ posts the generated SQL to the local `formqlweb` verifier backend.
 The current JS surface is:
 
 - `FormQL.loadSchemaInfoJSON(catalogJSON, options?)`
+- `FormQL.completeCatalogJSON(catalogJSON, source, offset, options?)`
 - `FormQL.compileCatalogJSON(catalogJSON, formula, options?)`
 - `FormQL.compileDocumentCatalogJSON(catalogJSON, document, options?)`
 - `FormQL.compileAndVerifyCatalogJSON(catalogJSON, formula, options?)`
@@ -40,3 +41,4 @@ Options currently support:
 - `fieldAlias`
 - `verifyMode`
 - `revision`
+- `maxRelationshipDepth`
