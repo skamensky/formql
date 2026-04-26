@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/skamensky/formql/pkg/formql/filemeta"
 	"github.com/skamensky/formql/pkg/formql/schema"
 )
 
@@ -15,12 +16,10 @@ type exampleWorkspace struct {
 	Name       string
 	Root       string
 	SchemaPath string
-	BaseTable  string
 }
 
 type workspaceSettings struct {
 	SchemaPath string `json:"formql.schemaPath"`
-	BaseTable  string `json:"formql.baseTable"`
 }
 
 func loadExampleWorkspaces(t *testing.T) []exampleWorkspace {
@@ -54,7 +53,6 @@ func loadExampleWorkspaces(t *testing.T) []exampleWorkspace {
 			Name:       entry.Name(),
 			Root:       root,
 			SchemaPath: filepath.Clean(schemaPath),
-			BaseTable:  strings.ToLower(strings.TrimSpace(settings.BaseTable)),
 		})
 	}
 
@@ -81,12 +79,40 @@ func loadWorkspaceCatalog(t *testing.T, workspace exampleWorkspace) *schema.Cata
 	if err := json.Unmarshal(catalogFile, &catalog); err != nil {
 		t.Fatalf("decode schema for %s: %v", workspace.Name, err)
 	}
-	if workspace.BaseTable != "" {
-		catalog.BaseTable = workspace.BaseTable
-	}
 	if err := catalog.Validate(); err != nil {
 		t.Fatalf("validate schema for %s: %v", workspace.Name, err)
 	}
 
 	return &catalog
+}
+
+func loadWorkspaceCatalogForFile(t *testing.T, workspace exampleWorkspace, sourcePath string, sourceText []byte) *schema.Catalog {
+	t.Helper()
+
+	catalog := loadWorkspaceCatalog(t, workspace)
+	baseTable := resolveExampleFileBaseTable(t, sourcePath, string(sourceText))
+	catalog.BaseTable = baseTable
+	if err := catalog.Validate(); err != nil {
+		t.Fatalf("validate schema for %s with base table %s: %v", workspace.Name, baseTable, err)
+	}
+	return catalog
+}
+
+func resolveExampleFileBaseTable(t *testing.T, sourcePath, sourceText string) string {
+	t.Helper()
+
+	if metadata, ok, err := filemeta.ParseSource(sourceText); err != nil {
+		t.Fatalf("parse metadata for %s: %v", sourcePath, err)
+	} else if ok && metadata.BaseTable() != "" {
+		return metadata.BaseTable()
+	}
+
+	if metadata, _, ok, err := filemeta.LoadSidecar(sourcePath); err != nil {
+		t.Fatalf("load metadata sidecar for %s: %v", sourcePath, err)
+	} else if ok && metadata.BaseTable() != "" {
+		return metadata.BaseTable()
+	}
+
+	t.Fatalf("missing FormQL table metadata for %s", sourcePath)
+	return ""
 }

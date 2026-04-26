@@ -124,8 +124,8 @@ func TestMockCatalogCanEmitJoinWarningsAndDedupeJoins(t *testing.T) {
 			},
 		},
 		relationships: map[string]schema.Relationship{
-			"submission:merchant": {
-				Name:              "merchant",
+			"submission:merchant_id__rel": {
+				Name:              "merchant_id__rel",
 				FromTable:         "submission",
 				ToTable:           "merchant",
 				JoinColumn:        "merchant_id",
@@ -135,7 +135,7 @@ func TestMockCatalogCanEmitJoinWarningsAndDedupeJoins(t *testing.T) {
 		},
 	}
 
-	compilation, err := formql.Compile(`merchant_rel.name & merchant_rel.category`, catalog, "result")
+	compilation, err := formql.Compile(`merchant_id__rel.name & merchant_id__rel.category`, catalog, "result")
 	if err != nil {
 		t.Fatalf("compile failed: %v", err)
 	}
@@ -187,8 +187,8 @@ func TestCompileDocumentRendersMultipleProjections(t *testing.T) {
 			},
 		},
 		relationships: map[string]schema.Relationship{
-			"orders:customer": {
-				Name:         "customer",
+			"orders:customer_id__rel": {
+				Name:         "customer_id__rel",
 				FromTable:    "orders",
 				ToTable:      "customers",
 				JoinColumn:   "customer_id",
@@ -197,16 +197,16 @@ func TestCompileDocumentRendersMultipleProjections(t *testing.T) {
 		},
 	}
 
-	compilation, err := formql.CompileDocument(`amount, customer_rel.email, amount + 1 AS amount_plus_one`, catalog)
+	compilation, err := formql.CompileDocument(`amount, customer_id__rel.email, amount + 1 AS amount_plus_one`, catalog)
 	if err != nil {
 		t.Fatalf("CompileDocument failed: %v", err)
 	}
 
-	want := "SELECT\n  t0.\"amount\" AS \"amount\",\n  rel_customer.\"email\" AS \"customer_email\",\n  (t0.\"amount\" + 1) AS \"amount_plus_one\"\nFROM \"orders\" t0\nLEFT JOIN \"customers\" rel_customer ON t0.\"customer_id\" = rel_customer.\"id\""
+	want := "SELECT\n  t0.\"amount\" AS \"amount\",\n  rel_3d36a04d35660a5c.\"email\" AS \"customer_id__rel_email\",\n  (t0.\"amount\" + 1) AS \"amount_plus_one\"\nFROM \"orders\" t0\nLEFT JOIN \"customers\" rel_3d36a04d35660a5c ON t0.\"customer_id\" = rel_3d36a04d35660a5c.\"id\""
 	if compilation.SQL.Query != want {
 		t.Fatalf("unexpected document query\nwant:\n%s\n\ngot:\n%s", want, compilation.SQL.Query)
 	}
-	if got := compilation.HIR.Fields[1].Alias; got != "customer_email" {
+	if got := compilation.HIR.Fields[1].Alias; got != "customer_id__rel_email" {
 		t.Fatalf("unexpected relationship alias %q", got)
 	}
 }
@@ -231,8 +231,8 @@ func TestCompileDocumentDedupeJoinsAndWarnings(t *testing.T) {
 			},
 		},
 		relationships: map[string]schema.Relationship{
-			"submission:merchant": {
-				Name:              "merchant",
+			"submission:merchant_id__rel": {
+				Name:              "merchant_id__rel",
 				FromTable:         "submission",
 				ToTable:           "merchant",
 				JoinColumn:        "merchant_id",
@@ -242,7 +242,7 @@ func TestCompileDocumentDedupeJoinsAndWarnings(t *testing.T) {
 		},
 	}
 
-	compilation, err := formql.CompileDocument(`merchant_rel.name, merchant_rel.category`, catalog)
+	compilation, err := formql.CompileDocument(`merchant_id__rel.name, merchant_id__rel.category`, catalog)
 	if err != nil {
 		t.Fatalf("CompileDocument failed: %v", err)
 	}
@@ -335,8 +335,8 @@ func TestMultiLevelRelationshipAndIf(t *testing.T) {
 			},
 		},
 		relationships: map[string]schema.Relationship{
-			"opportunity:customer": {
-				Name:                "customer",
+			"opportunity:customer_id__rel": {
+				Name:                "customer_id__rel",
 				FromTable:           "opportunity",
 				ToTable:             "customer",
 				JoinColumn:          "customer_id",
@@ -344,8 +344,8 @@ func TestMultiLevelRelationshipAndIf(t *testing.T) {
 				JoinColumnIndexed:   boolPtr(true),
 				TargetColumnIndexed: boolPtr(true),
 			},
-			"customer:assigned_rep": {
-				Name:                "assigned_rep",
+			"customer:assigned_rep_id__rel": {
+				Name:                "assigned_rep_id__rel",
 				FromTable:           "customer",
 				ToTable:             "rep",
 				JoinColumn:          "assigned_rep_id",
@@ -356,7 +356,7 @@ func TestMultiLevelRelationshipAndIf(t *testing.T) {
 		},
 	}
 
-	compilation, err := formql.Compile(`IF(amount > 100, customer_rel.assigned_rep_rel.name, "low")`, catalog, "result")
+	compilation, err := formql.Compile(`IF(amount > 100, customer_id__rel.assigned_rep_id__rel.name, "low")`, catalog, "result")
 	if err != nil {
 		t.Fatalf("compile failed: %v", err)
 	}
@@ -370,7 +370,7 @@ func TestMultiLevelRelationshipAndIf(t *testing.T) {
 	if !strings.Contains(compilation.SQL.Query, "CASE WHEN") {
 		t.Fatalf("expected CASE WHEN in query, got:\n%s", compilation.SQL.Query)
 	}
-	if !strings.Contains(compilation.SQL.Query, "rel_customer_assigned_rep") {
+	if !strings.Contains(compilation.SQL.Query, "rel_0eac59992a21af53") {
 		t.Fatalf("expected nested relationship alias in query, got:\n%s", compilation.SQL.Query)
 	}
 }
@@ -397,7 +397,7 @@ func TestUnknownColumnReturnsError(t *testing.T) {
 }
 
 func TestMissingOperatorDiagnosticIncludesHint(t *testing.T) {
-	_, err := formql.Parse(`IF(customer_rel.email = NULL, "missing-email", customer_rel.first_name " " & customer_rel.last_name)`)
+	_, err := formql.Parse(`IF(customer.email = NULL, "missing-email", customer.first_name " " & customer.last_name)`)
 	if err == nil {
 		t.Fatal("expected parse error")
 	}
@@ -415,7 +415,7 @@ func TestMissingOperatorDiagnosticIncludesHint(t *testing.T) {
 }
 
 func TestMissingFunctionCloseDiagnosticIncludesClosingParenHint(t *testing.T) {
-	_, err := formql.Parse(`IF(customer_rel.email = NULL, "missing-email", customer_rel.first_name & " " & customer_rel.last_name`)
+	_, err := formql.Parse(`IF(customer.email = NULL, "missing-email", customer.first_name & " " & customer.last_name`)
 	if err == nil {
 		t.Fatal("expected parse error")
 	}
@@ -485,8 +485,8 @@ func TestUnknownRelationshipDiagnosticSuggestsRelName(t *testing.T) {
 			},
 		},
 		relationships: map[string]schema.Relationship{
-			"opportunity:customer": {
-				Name:         "customer",
+			"opportunity:customer_id__rel": {
+				Name:         "customer_id__rel",
 				FromTable:    "opportunity",
 				ToTable:      "customer",
 				JoinColumn:   "customer_id",
@@ -495,7 +495,7 @@ func TestUnknownRelationshipDiagnosticSuggestsRelName(t *testing.T) {
 		},
 	}
 
-	_, err := formql.Compile(`custmer_rel.email`, catalog, "result")
+	_, err := formql.Compile(`custmer_id__rel.email`, catalog, "result")
 	if err == nil {
 		t.Fatal("expected compile error")
 	}
@@ -507,7 +507,7 @@ func TestUnknownRelationshipDiagnosticSuggestsRelName(t *testing.T) {
 	if typed.Code != "unknown_relationship" {
 		t.Fatalf("unexpected code: %s", typed.Code)
 	}
-	if !strings.Contains(typed.Hint, "customer_rel") {
+	if !strings.Contains(typed.Hint, "customer") {
 		t.Fatalf("expected relationship suggestion, got %q", typed.Hint)
 	}
 }

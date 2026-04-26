@@ -13,7 +13,6 @@ import (
 func TestOfflineWorkspaceExamplesCompile(t *testing.T) {
 	for _, workspace := range loadExampleWorkspaces(t) {
 		t.Run(workspace.Name, func(t *testing.T) {
-			catalog := loadWorkspaceCatalog(t, workspace)
 			formulaDir := filepath.Join(workspace.Root, "formulas")
 			entries, err := os.ReadDir(formulaDir)
 			if err != nil {
@@ -35,6 +34,7 @@ func TestOfflineWorkspaceExamplesCompile(t *testing.T) {
 					t.Fatalf("read formula %s: %v", entry.Name(), err)
 				}
 
+				catalog := loadWorkspaceCatalogForFile(t, workspace, path, formulaText)
 				compilation, err := formql.Compile(string(formulaText), catalog, "result")
 				if err != nil {
 					t.Fatalf("compile %s: %v", entry.Name(), err)
@@ -53,7 +53,6 @@ func TestOfflineWorkspaceExamplesCompile(t *testing.T) {
 func TestOfflineWorkspaceDocumentExamplesCompile(t *testing.T) {
 	for _, workspace := range loadExampleWorkspaces(t) {
 		t.Run(workspace.Name, func(t *testing.T) {
-			catalog := loadWorkspaceCatalog(t, workspace)
 			documentDir := filepath.Join(workspace.Root, "documents")
 			entries, err := os.ReadDir(documentDir)
 			if os.IsNotExist(err) {
@@ -80,6 +79,7 @@ func TestOfflineWorkspaceDocumentExamplesCompile(t *testing.T) {
 					t.Fatalf("read document %s: %v", entry.Name(), err)
 				}
 
+				catalog := loadWorkspaceCatalogForFile(t, workspace, path, documentText)
 				compilation, err := formql.CompileDocument(string(documentText), catalog)
 				if err != nil {
 					t.Fatalf("compile document %s: %v", entry.Name(), err)

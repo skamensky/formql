@@ -29,7 +29,7 @@ const testCatalogJSON = `{
   ],
   "relationships": [
     {
-      "name": "customer",
+      "name": "customer_id__rel",
       "from_table": "orders",
       "to_table": "customers",
       "join_column": "customer_id",
@@ -81,7 +81,7 @@ func TestVerifySQLUsesDefaultVerifier(t *testing.T) {
 }
 
 func TestCompileCatalogJSONCompilesFormula(t *testing.T) {
-	compilation, err := CompileCatalogJSON([]byte(testCatalogJSON), `customer_rel.email & " / " & STRING(amount)`, "result")
+	compilation, err := CompileCatalogJSON([]byte(testCatalogJSON), `customer_id__rel.email & " / " & STRING(amount)`, "result")
 	if err != nil {
 		t.Fatalf("CompileCatalogJSON returned error: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestCompileCatalogJSONCompilesFormula(t *testing.T) {
 }
 
 func TestCompileDocumentCatalogJSONCompilesDocument(t *testing.T) {
-	compilation, err := CompileDocumentCatalogJSON([]byte(testCatalogJSON), `amount, customer_rel.email AS customer_email`)
+	compilation, err := CompileDocumentCatalogJSON([]byte(testCatalogJSON), `amount, customer_id__rel.email AS customer_email`)
 	if err != nil {
 		t.Fatalf("CompileDocumentCatalogJSON returned error: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestCompileAndVerifyCatalogJSON(t *testing.T) {
 }
 
 func TestCompileAndVerifyDocumentCatalogJSON(t *testing.T) {
-	compilation, verification, err := CompileAndVerifyDocumentCatalogJSON(context.Background(), []byte(testCatalogJSON), `amount, customer_rel.email`, verify.ModeSyntax)
+	compilation, verification, err := CompileAndVerifyDocumentCatalogJSON(context.Background(), []byte(testCatalogJSON), `amount, customer_id__rel.email`, verify.ModeSyntax)
 	if err != nil {
 		t.Fatalf("CompileAndVerifyDocumentCatalogJSON returned error: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestCompileAndVerifyWithProvider(t *testing.T) {
 		context.Background(),
 		provider,
 		catalog.Ref{BaseTable: "orders"},
-		`customer_rel.email & " / " & STRING(amount)`,
+		`customer_id__rel.email & " / " & STRING(amount)`,
 		"result",
 		verify.ModeSyntax,
 	)
@@ -175,7 +175,7 @@ func TestCompileAndVerifyCatalogIntrospectionJSON(t *testing.T) {
 	compilation, verification, err := CompileAndVerifyCatalogIntrospectionJSON(
 		context.Background(),
 		[]byte(testIntrospectionJSON),
-		`customer_rel.email & " / " & STRING(amount)`,
+		`customer_id__rel.email & " / " & STRING(amount)`,
 		"result",
 		verify.ModeSyntax,
 	)

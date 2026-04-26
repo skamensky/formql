@@ -386,8 +386,8 @@ func (p *parser) parseIdentifierLike() (ast.Expr, error) {
 		return &ast.NullLiteral{Kind: "null_literal", Pos: pos}, nil
 	}
 
-	if strings.HasSuffix(lower, "_rel") && p.current.Type == token.DOT {
-		return p.parseRelationship(lower, pos)
+	if p.current.Type == token.DOT {
+		return p.parseRelationshipPath(lower, pos)
 	}
 
 	return &ast.Identifier{
@@ -397,15 +397,15 @@ func (p *parser) parseIdentifierLike() (ast.Expr, error) {
 	}, nil
 }
 
-func (p *parser) parseRelationship(first string, pos int) (ast.Expr, error) {
-	chain := []string{strings.TrimSuffix(first, "_rel")}
+func (p *parser) parseRelationshipPath(first string, pos int) (ast.Expr, error) {
+	segments := []string{first}
 
 	for {
 		if err := p.eat(token.DOT); err != nil {
 			return nil, err
 		}
 		if p.current.Type != token.IDENT {
-			return nil, diagnostic.NewError("parser", "invalid_relationship_path", fmt.Sprintf("relationship path must end in a field name, got %s", p.current.HumanLabel()), "relationship paths look like customer_rel.email", p.current.Position)
+			return nil, diagnostic.NewError("parser", "invalid_path", fmt.Sprintf("path must end in an identifier, got %s", p.current.HumanLabel()), "paths look like customer.email or pickup_branch.city", p.current.Position)
 		}
 
 		segment := strings.ToLower(p.current.Literal)
@@ -413,19 +413,20 @@ func (p *parser) parseRelationship(first string, pos int) (ast.Expr, error) {
 			return nil, err
 		}
 
-		if strings.HasSuffix(segment, "_rel") {
-			if p.current.Type != token.DOT {
-				return nil, diagnostic.NewError("parser", "invalid_relationship_path", "relationship path must end in a field, not another relationship", "add a field name after the relationship path, for example customer_rel.email", pos)
-			}
-			chain = append(chain, strings.TrimSuffix(segment, "_rel"))
-			continue
+		segments = append(segments, segment)
+		if p.current.Type != token.DOT {
+			break
 		}
-
-		return &ast.RelationshipRef{
-			Kind:  "relationship_ref",
-			Chain: chain,
-			Field: segment,
-			Pos:   pos,
-		}, nil
 	}
+
+	if len(segments) < 2 {
+		return nil, diagnostic.NewError("parser", "invalid_path", "path must contain at least one relationship and one field", "paths look like customer.email", pos)
+	}
+
+	return &ast.RelationshipRef{
+		Kind:  "relationship_ref",
+		Chain: append([]string(nil), segments[:len(segments)-1]...),
+		Field: segments[len(segments)-1],
+		Pos:   pos,
+	}, nil
 }

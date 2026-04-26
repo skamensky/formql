@@ -11,12 +11,25 @@ import (
 	"github.com/skamensky/formql/pkg/formql/schema"
 )
 
+const DefaultMaxRelationshipDepth = 30
+
+// Options configures semantic lowering behavior.
+type Options struct {
+	MaxRelationshipDepth int
+}
+
 // Lower converts AST into typed semantic IR.
 func Lower(node ast.Expr, catalog schema.Resolver) (*ir.Plan, error) {
+	return LowerWithOptions(node, catalog, Options{})
+}
+
+// LowerWithOptions converts AST into typed semantic IR with explicit options.
+func LowerWithOptions(node ast.Expr, catalog schema.Resolver, options Options) (*ir.Plan, error) {
 	l, err := newLowerer(catalog)
 	if err != nil {
 		return nil, err
 	}
+	l.maxRelationshipDepth = normalizedMaxRelationshipDepth(options.MaxRelationshipDepth)
 
 	expr, err := l.lowerExpr(node)
 	if err != nil {
@@ -24,15 +37,21 @@ func Lower(node ast.Expr, catalog schema.Resolver) (*ir.Plan, error) {
 	}
 
 	return &ir.Plan{
-		BaseTable: l.baseTable,
-		Expr:      expr,
-		Joins:     l.orderedJoins(),
-		Warnings:  l.orderedWarnings(),
+		BaseTable:  l.baseTable,
+		BaseSchema: l.baseSchema,
+		Expr:       expr,
+		Joins:      l.orderedJoins(),
+		Warnings:   l.orderedWarnings(),
 	}, nil
 }
 
 // LowerDocument converts a top-level document AST into typed semantic IR.
 func LowerDocument(document *ast.Document, catalog schema.Resolver) (*ir.DocumentPlan, error) {
+	return LowerDocumentWithOptions(document, catalog, Options{})
+}
+
+// LowerDocumentWithOptions converts a top-level document AST into typed semantic IR with explicit options.
+func LowerDocumentWithOptions(document *ast.Document, catalog schema.Resolver, options Options) (*ir.DocumentPlan, error) {
 	if document == nil {
 		return nil, fmt.Errorf("document is required")
 	}
@@ -44,6 +63,7 @@ func LowerDocument(document *ast.Document, catalog schema.Resolver) (*ir.Documen
 	if err != nil {
 		return nil, err
 	}
+	l.maxRelationshipDepth = normalizedMaxRelationshipDepth(options.MaxRelationshipDepth)
 
 	fields := make([]ir.SelectField, 0, len(document.Items))
 	usedAliases := make(map[string]bool, len(document.Items))
@@ -66,10 +86,11 @@ func LowerDocument(document *ast.Document, catalog schema.Resolver) (*ir.Documen
 	}
 
 	return &ir.DocumentPlan{
-		BaseTable: l.baseTable,
-		Fields:    fields,
-		Joins:     l.orderedJoins(),
-		Warnings:  l.orderedWarnings(),
+		BaseTable:  l.baseTable,
+		BaseSchema: l.baseSchema,
+		Fields:     fields,
+		Joins:      l.orderedJoins(),
+		Warnings:   l.orderedWarnings(),
 	}, nil
 }
 
@@ -81,13 +102,20 @@ func newLowerer(catalog schema.Resolver) (*lowerer, error) {
 		return nil, err
 	}
 
+	baseTable := strings.ToLower(catalog.BaseTableName())
+	baseSchema := ""
+	if sp, ok := catalog.(schemaProvider); ok {
+		baseSchema = sp.SchemaFor(baseTable)
+	}
+
 	l := &lowerer{
-		catalog:   catalog,
-		baseTable: strings.ToLower(catalog.BaseTableName()),
-		joins:     make(map[string]ir.Join),
-		order:     make([]string, 0, 4),
-		warnings:  make(map[string]diagnostic.Warning),
-		warnOrder: make([]string, 0, 2),
+		catalog:    catalog,
+		baseTable:  baseTable,
+		baseSchema: baseSchema,
+		joins:      make(map[string]ir.Join),
+		order:      make([]string, 0, 4),
+		warnings:   make(map[string]diagnostic.Warning),
+		warnOrder:  make([]string, 0, 2),
 	}
 
 	return l, nil
@@ -109,13 +137,21 @@ func (l *lowerer) orderedWarnings() []diagnostic.Warning {
 	return warnings
 }
 
+// schemaProvider is satisfied by *schema.Catalog so the lowerer can resolve table schemas
+// without changing the Resolver interface.
+type schemaProvider interface {
+	SchemaFor(tableName string) string
+}
+
 type lowerer struct {
-	catalog   schema.Resolver
-	baseTable string
-	joins     map[string]ir.Join
-	order     []string
-	warnings  map[string]diagnostic.Warning
-	warnOrder []string
+	catalog              schema.Resolver
+	baseTable            string
+	baseSchema           string
+	maxRelationshipDepth int
+	joins                map[string]ir.Join
+	order                []string
+	warnings             map[string]diagnostic.Warning
+	warnOrder            []string
 }
 
 func selectAlias(item ast.SelectItem, used map[string]bool) (string, error) {
@@ -243,15 +279,19 @@ func (l *lowerer) lowerExpr(node ast.Expr) (ir.Expr, error) {
 }
 
 func (l *lowerer) lowerRelationshipRef(node *ast.RelationshipRef) (ir.Expr, error) {
+	if len(node.Chain) > l.maxRelationshipDepth {
+		return nil, diagnostic.NewError("semantics", "relationship_depth_exceeded", fmt.Sprintf("relationship path depth %d exceeds max depth %d", len(node.Chain), l.maxRelationshipDepth), "shorten the path or raise max_relationship_depth in the host configuration", node.Pos)
+	}
+
 	currentTable := l.baseTable
 	path := make([]string, 0, len(node.Chain))
 
 	for _, relationshipName := range node.Chain {
 		relationship, ok := l.catalog.Relationship(currentTable, relationshipName)
 		if !ok {
-			hint := "relationships use the *_rel syntax, for example customer_rel.email"
+			hint := "check the catalog relationship names for this table"
 			if suggestion, ok := l.suggestRelationship(currentTable, relationshipName); ok {
-				hint = fmt.Sprintf("did you mean %s_rel?", suggestion)
+				hint = fmt.Sprintf("did you mean %q?", suggestion)
 			}
 			return nil, diagnostic.NewError("semantics", "unknown_relationship", fmt.Sprintf("unknown relationship %q from table %q", relationshipName, currentTable), hint, node.Pos)
 		}
@@ -278,16 +318,29 @@ func (l *lowerer) lowerRelationshipRef(node *ast.RelationshipRef) (ir.Expr, erro
 	}, nil
 }
 
+func normalizedMaxRelationshipDepth(value int) int {
+	if value <= 0 {
+		return DefaultMaxRelationshipDepth
+	}
+	return value
+}
+
 func (l *lowerer) addJoin(path []string, relationship *schema.Relationship, position int) {
 	key := strings.Join(path, ".")
 	if _, ok := l.joins[key]; ok {
 		return
 	}
+	toTable := strings.ToLower(relationship.ToTable)
+	toSchema := ""
+	if sp, ok := l.catalog.(schemaProvider); ok {
+		toSchema = sp.SchemaFor(toTable)
+	}
 	l.joins[key] = ir.Join{
 		Key:          key,
 		Path:         append([]string(nil), path...),
 		FromTable:    strings.ToLower(relationship.FromTable),
-		ToTable:      strings.ToLower(relationship.ToTable),
+		ToTable:      toTable,
+		ToSchema:     toSchema,
 		JoinColumn:   strings.ToLower(relationship.JoinColumn),
 		TargetColumn: strings.ToLower(relationship.ResolvedTargetColumn()),
 	}

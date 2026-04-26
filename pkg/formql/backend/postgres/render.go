@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"fmt"
+	"hash/fnv"
 	"strconv"
 	"strings"
 
@@ -46,7 +47,7 @@ func (r Renderer) Render(plan *ir.Plan, fieldAlias string) (Artifact, error) {
 		return Artifact{}, err
 	}
 
-	fromLine := fmt.Sprintf("FROM %s t0", quoteIdent(plan.BaseTable))
+	fromLine := fmt.Sprintf("FROM %s t0", schemaQualify(plan.BaseSchema, plan.BaseTable))
 	joinClauses := renderJoinClauses(plan.Joins)
 
 	lines := []string{
@@ -94,7 +95,7 @@ func (r Renderer) RenderDocument(plan *ir.DocumentPlan) (DocumentArtifact, error
 		}
 		lines = append(lines, fmt.Sprintf("  %s AS %s%s", projection.Expression, quoteIdent(projection.Alias), suffix))
 	}
-	lines = append(lines, fmt.Sprintf("FROM %s t0", quoteIdent(plan.BaseTable)))
+	lines = append(lines, fmt.Sprintf("FROM %s t0", schemaQualify(plan.BaseSchema, plan.BaseTable)))
 
 	joinClauses := renderJoinClauses(plan.Joins)
 	lines = append(lines, joinClauses...)
@@ -142,7 +143,7 @@ func renderJoinClauses(joins []ir.Join) []string {
 		joinClauses = append(joinClauses,
 			fmt.Sprintf(
 				"LEFT JOIN %s %s ON %s.%s = %s.%s",
-				quoteIdent(join.ToTable),
+				schemaQualify(join.ToSchema, join.ToTable),
 				alias,
 				parentAlias,
 				quoteIdent(join.JoinColumn),
@@ -262,9 +263,18 @@ func renderArgs(args []ir.Expr) ([]string, error) {
 }
 
 func aliasForPath(path []string) string {
-	return "rel_" + strings.Join(path, "_")
+	h := fnv.New64a()
+	h.Write([]byte(strings.Join(path, ".")))
+	return fmt.Sprintf("rel_%016x", h.Sum64())
 }
 
 func quoteIdent(identifier string) string {
 	return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
+}
+
+func schemaQualify(schema, table string) string {
+	if schema == "" {
+		return quoteIdent(table)
+	}
+	return quoteIdent(schema) + "." + quoteIdent(table)
 }

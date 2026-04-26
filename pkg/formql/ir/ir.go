@@ -13,18 +13,20 @@ type Expr interface {
 
 // Plan is the typed semantic result used by backends.
 type Plan struct {
-	BaseTable string               `json:"base_table"`
-	Expr      Expr                 `json:"expr"`
-	Joins     []Join               `json:"joins"`
-	Warnings  []diagnostic.Warning `json:"warnings,omitempty"`
+	BaseTable  string               `json:"base_table"`
+	BaseSchema string               `json:"base_schema"`
+	Expr       Expr                 `json:"expr"`
+	Joins      []Join               `json:"joins"`
+	Warnings   []diagnostic.Warning `json:"warnings,omitempty"`
 }
 
 // DocumentPlan is the typed semantic result for a multi-field query document.
 type DocumentPlan struct {
-	BaseTable string               `json:"base_table"`
-	Fields    []SelectField        `json:"fields"`
-	Joins     []Join               `json:"joins"`
-	Warnings  []diagnostic.Warning `json:"warnings,omitempty"`
+	BaseTable  string               `json:"base_table"`
+	BaseSchema string               `json:"base_schema"`
+	Fields     []SelectField        `json:"fields"`
+	Joins      []Join               `json:"joins"`
+	Warnings   []diagnostic.Warning `json:"warnings,omitempty"`
 }
 
 // SelectField is one typed output projection in a document plan.
@@ -40,6 +42,7 @@ type Join struct {
 	Path         []string `json:"path"`
 	FromTable    string   `json:"from_table"`
 	ToTable      string   `json:"to_table"`
+	ToSchema     string   `json:"to_schema"`
 	JoinColumn   string   `json:"join_column"`
 	TargetColumn string   `json:"target_column"`
 }

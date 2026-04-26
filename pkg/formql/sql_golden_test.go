@@ -78,13 +78,13 @@ func TestRentalAgencyGoldenSQL(t *testing.T) {
 				t.Fatalf("missing workspace %s", tc.workspaceName)
 			}
 
-			catalog := loadWorkspaceCatalog(t, workspace)
 			formulaPath := filepath.Join(workspace.Root, "formulas", tc.formulaFile)
 			formulaText, err := os.ReadFile(formulaPath)
 			if err != nil {
 				t.Fatalf("read formula %s: %v", formulaPath, err)
 			}
 
+			catalog := loadWorkspaceCatalogForFile(t, workspace, formulaPath, formulaText)
 			compilation, err := formql.Compile(string(formulaText), catalog, "result")
 			if err != nil {
 				t.Fatalf("compile %s: %v", tc.formulaFile, err)

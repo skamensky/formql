@@ -11,6 +11,11 @@ import (
 	"github.com/skamensky/formql/pkg/formql/verify"
 )
 
+// CompileOptions configures compiler behavior for host APIs.
+type CompileOptions struct {
+	MaxRelationshipDepth int `json:"max_relationship_depth,omitempty"`
+}
+
 // LoadCatalogJSON decodes and validates a compiler catalog from JSON.
 func LoadCatalogJSON(data []byte) (*schema.Catalog, error) {
 	catalogValue, err := catalog.DecodeCatalogJSON(data)
@@ -63,6 +68,11 @@ func LoadCatalogIntrospectionJSON(data []byte) (*schema.Catalog, error) {
 
 // CompileCatalogJSON compiles a formula using a JSON-encoded schema catalog.
 func CompileCatalogJSON(data []byte, formulaText, fieldAlias string) (*formql.Compilation, error) {
+	return CompileCatalogJSONWithOptions(data, formulaText, fieldAlias, CompileOptions{})
+}
+
+// CompileCatalogJSONWithOptions compiles a formula using a JSON-encoded schema catalog and explicit options.
+func CompileCatalogJSONWithOptions(data []byte, formulaText, fieldAlias string, options CompileOptions) (*formql.Compilation, error) {
 	catalogValue, err := LoadCatalogJSON(data)
 	if err != nil {
 		return nil, err
@@ -73,7 +83,9 @@ func CompileCatalogJSON(data []byte, formulaText, fieldAlias string) (*formql.Co
 		alias = "result"
 	}
 
-	compilation, err := formql.Compile(formulaText, catalogValue, alias)
+	compilation, err := formql.CompileWithOptions(formulaText, catalogValue, alias, formql.Options{
+		MaxRelationshipDepth: options.MaxRelationshipDepth,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -82,6 +94,11 @@ func CompileCatalogJSON(data []byte, formulaText, fieldAlias string) (*formql.Co
 
 // CompileCatalogIntrospectionJSON compiles a formula from raw host introspection metadata.
 func CompileCatalogIntrospectionJSON(data []byte, formulaText, fieldAlias string) (*formql.Compilation, error) {
+	return CompileCatalogIntrospectionJSONWithOptions(data, formulaText, fieldAlias, CompileOptions{})
+}
+
+// CompileCatalogIntrospectionJSONWithOptions compiles a formula from raw host introspection metadata.
+func CompileCatalogIntrospectionJSONWithOptions(data []byte, formulaText, fieldAlias string, options CompileOptions) (*formql.Compilation, error) {
 	catalogValue, err := LoadCatalogIntrospectionJSON(data)
 	if err != nil {
 		return nil, err
@@ -92,29 +109,50 @@ func CompileCatalogIntrospectionJSON(data []byte, formulaText, fieldAlias string
 		alias = "result"
 	}
 
-	return formql.Compile(formulaText, catalogValue, alias)
+	return formql.CompileWithOptions(formulaText, catalogValue, alias, formql.Options{
+		MaxRelationshipDepth: options.MaxRelationshipDepth,
+	})
 }
 
 // CompileDocumentCatalogJSON compiles a multi-field document using a JSON-encoded schema catalog.
 func CompileDocumentCatalogJSON(data []byte, documentText string) (*formql.DocumentCompilation, error) {
+	return CompileDocumentCatalogJSONWithOptions(data, documentText, CompileOptions{})
+}
+
+// CompileDocumentCatalogJSONWithOptions compiles a multi-field document using a JSON-encoded schema catalog.
+func CompileDocumentCatalogJSONWithOptions(data []byte, documentText string, options CompileOptions) (*formql.DocumentCompilation, error) {
 	catalogValue, err := LoadCatalogJSON(data)
 	if err != nil {
 		return nil, err
 	}
-	return formql.CompileDocument(documentText, catalogValue)
+	return formql.CompileDocumentWithOptions(documentText, catalogValue, formql.Options{
+		MaxRelationshipDepth: options.MaxRelationshipDepth,
+	})
 }
 
 // CompileDocumentCatalogIntrospectionJSON compiles a multi-field document from raw host introspection metadata.
 func CompileDocumentCatalogIntrospectionJSON(data []byte, documentText string) (*formql.DocumentCompilation, error) {
+	return CompileDocumentCatalogIntrospectionJSONWithOptions(data, documentText, CompileOptions{})
+}
+
+// CompileDocumentCatalogIntrospectionJSONWithOptions compiles a multi-field document from raw host introspection metadata.
+func CompileDocumentCatalogIntrospectionJSONWithOptions(data []byte, documentText string, options CompileOptions) (*formql.DocumentCompilation, error) {
 	catalogValue, err := LoadCatalogIntrospectionJSON(data)
 	if err != nil {
 		return nil, err
 	}
-	return formql.CompileDocument(documentText, catalogValue)
+	return formql.CompileDocumentWithOptions(documentText, catalogValue, formql.Options{
+		MaxRelationshipDepth: options.MaxRelationshipDepth,
+	})
 }
 
 // Compile loads a catalog from a provider and compiles a formula against it.
 func Compile(ctx context.Context, provider catalog.Provider, ref catalog.Ref, formulaText, fieldAlias string) (*formql.Compilation, error) {
+	return CompileWithOptions(ctx, provider, ref, formulaText, fieldAlias, CompileOptions{})
+}
+
+// CompileWithOptions loads a catalog from a provider and compiles a formula against it.
+func CompileWithOptions(ctx context.Context, provider catalog.Provider, ref catalog.Ref, formulaText, fieldAlias string, options CompileOptions) (*formql.Compilation, error) {
 	snapshot, err := LoadSnapshot(ctx, provider, ref)
 	if err != nil {
 		return nil, err
@@ -125,21 +163,35 @@ func Compile(ctx context.Context, provider catalog.Provider, ref catalog.Ref, fo
 		alias = "result"
 	}
 
-	return formql.Compile(formulaText, snapshot.Catalog, alias)
+	return formql.CompileWithOptions(formulaText, snapshot.Catalog, alias, formql.Options{
+		MaxRelationshipDepth: options.MaxRelationshipDepth,
+	})
 }
 
 // CompileDocument loads a catalog from a provider and compiles a multi-field document against it.
 func CompileDocument(ctx context.Context, provider catalog.Provider, ref catalog.Ref, documentText string) (*formql.DocumentCompilation, error) {
+	return CompileDocumentWithOptions(ctx, provider, ref, documentText, CompileOptions{})
+}
+
+// CompileDocumentWithOptions loads a catalog from a provider and compiles a multi-field document against it.
+func CompileDocumentWithOptions(ctx context.Context, provider catalog.Provider, ref catalog.Ref, documentText string, options CompileOptions) (*formql.DocumentCompilation, error) {
 	snapshot, err := LoadSnapshot(ctx, provider, ref)
 	if err != nil {
 		return nil, err
 	}
-	return formql.CompileDocument(documentText, snapshot.Catalog)
+	return formql.CompileDocumentWithOptions(documentText, snapshot.Catalog, formql.Options{
+		MaxRelationshipDepth: options.MaxRelationshipDepth,
+	})
 }
 
 // CompileAndVerifyCatalogJSON compiles a formula and verifies its generated SQL.
 func CompileAndVerifyCatalogJSON(ctx context.Context, data []byte, formulaText, fieldAlias string, mode verify.Mode) (*formql.Compilation, verify.Result, error) {
-	compilation, err := CompileCatalogJSON(data, formulaText, fieldAlias)
+	return CompileAndVerifyCatalogJSONWithOptions(ctx, data, formulaText, fieldAlias, mode, CompileOptions{})
+}
+
+// CompileAndVerifyCatalogJSONWithOptions compiles a formula and verifies its generated SQL.
+func CompileAndVerifyCatalogJSONWithOptions(ctx context.Context, data []byte, formulaText, fieldAlias string, mode verify.Mode, options CompileOptions) (*formql.Compilation, verify.Result, error) {
+	compilation, err := CompileCatalogJSONWithOptions(data, formulaText, fieldAlias, options)
 	if err != nil {
 		return nil, verify.Result{}, err
 	}
@@ -154,7 +206,12 @@ func CompileAndVerifyCatalogJSON(ctx context.Context, data []byte, formulaText, 
 
 // CompileAndVerifyDocumentCatalogJSON compiles a multi-field document and verifies its generated SQL.
 func CompileAndVerifyDocumentCatalogJSON(ctx context.Context, data []byte, documentText string, mode verify.Mode) (*formql.DocumentCompilation, verify.Result, error) {
-	compilation, err := CompileDocumentCatalogJSON(data, documentText)
+	return CompileAndVerifyDocumentCatalogJSONWithOptions(ctx, data, documentText, mode, CompileOptions{})
+}
+
+// CompileAndVerifyDocumentCatalogJSONWithOptions compiles a multi-field document and verifies its generated SQL.
+func CompileAndVerifyDocumentCatalogJSONWithOptions(ctx context.Context, data []byte, documentText string, mode verify.Mode, options CompileOptions) (*formql.DocumentCompilation, verify.Result, error) {
+	compilation, err := CompileDocumentCatalogJSONWithOptions(data, documentText, options)
 	if err != nil {
 		return nil, verify.Result{}, err
 	}
@@ -170,7 +227,12 @@ func CompileAndVerifyDocumentCatalogJSON(ctx context.Context, data []byte, docum
 // CompileAndVerifyCatalogIntrospectionJSON compiles a formula from raw host introspection metadata
 // and verifies the generated SQL through the shared verifier pipeline.
 func CompileAndVerifyCatalogIntrospectionJSON(ctx context.Context, data []byte, formulaText, fieldAlias string, mode verify.Mode) (*formql.Compilation, verify.Result, error) {
-	compilation, err := CompileCatalogIntrospectionJSON(data, formulaText, fieldAlias)
+	return CompileAndVerifyCatalogIntrospectionJSONWithOptions(ctx, data, formulaText, fieldAlias, mode, CompileOptions{})
+}
+
+// CompileAndVerifyCatalogIntrospectionJSONWithOptions compiles a formula from raw host introspection metadata.
+func CompileAndVerifyCatalogIntrospectionJSONWithOptions(ctx context.Context, data []byte, formulaText, fieldAlias string, mode verify.Mode, options CompileOptions) (*formql.Compilation, verify.Result, error) {
+	compilation, err := CompileCatalogIntrospectionJSONWithOptions(data, formulaText, fieldAlias, options)
 	if err != nil {
 		return nil, verify.Result{}, err
 	}
@@ -186,7 +248,12 @@ func CompileAndVerifyCatalogIntrospectionJSON(ctx context.Context, data []byte, 
 // CompileAndVerifyDocumentCatalogIntrospectionJSON compiles a multi-field document from raw host
 // introspection metadata and verifies the generated SQL through the shared verifier pipeline.
 func CompileAndVerifyDocumentCatalogIntrospectionJSON(ctx context.Context, data []byte, documentText string, mode verify.Mode) (*formql.DocumentCompilation, verify.Result, error) {
-	compilation, err := CompileDocumentCatalogIntrospectionJSON(data, documentText)
+	return CompileAndVerifyDocumentCatalogIntrospectionJSONWithOptions(ctx, data, documentText, mode, CompileOptions{})
+}
+
+// CompileAndVerifyDocumentCatalogIntrospectionJSONWithOptions compiles a multi-field document from raw host introspection metadata.
+func CompileAndVerifyDocumentCatalogIntrospectionJSONWithOptions(ctx context.Context, data []byte, documentText string, mode verify.Mode, options CompileOptions) (*formql.DocumentCompilation, verify.Result, error) {
+	compilation, err := CompileDocumentCatalogIntrospectionJSONWithOptions(data, documentText, options)
 	if err != nil {
 		return nil, verify.Result{}, err
 	}
@@ -202,7 +269,12 @@ func CompileAndVerifyDocumentCatalogIntrospectionJSON(ctx context.Context, data 
 // CompileAndVerify loads a catalog from a provider, compiles a formula, and
 // runs the shared verification pipeline against the generated SQL.
 func CompileAndVerify(ctx context.Context, provider catalog.Provider, ref catalog.Ref, formulaText, fieldAlias string, mode verify.Mode) (*formql.Compilation, verify.Result, error) {
-	compilation, err := Compile(ctx, provider, ref, formulaText, fieldAlias)
+	return CompileAndVerifyWithOptions(ctx, provider, ref, formulaText, fieldAlias, mode, CompileOptions{})
+}
+
+// CompileAndVerifyWithOptions loads a catalog from a provider, compiles a formula, and verifies the SQL.
+func CompileAndVerifyWithOptions(ctx context.Context, provider catalog.Provider, ref catalog.Ref, formulaText, fieldAlias string, mode verify.Mode, options CompileOptions) (*formql.Compilation, verify.Result, error) {
+	compilation, err := CompileWithOptions(ctx, provider, ref, formulaText, fieldAlias, options)
 	if err != nil {
 		return nil, verify.Result{}, err
 	}
@@ -218,7 +290,12 @@ func CompileAndVerify(ctx context.Context, provider catalog.Provider, ref catalo
 // CompileAndVerifyDocument loads a catalog from a provider, compiles a multi-field
 // document, and runs the shared verification pipeline against the generated SQL.
 func CompileAndVerifyDocument(ctx context.Context, provider catalog.Provider, ref catalog.Ref, documentText string, mode verify.Mode) (*formql.DocumentCompilation, verify.Result, error) {
-	compilation, err := CompileDocument(ctx, provider, ref, documentText)
+	return CompileAndVerifyDocumentWithOptions(ctx, provider, ref, documentText, mode, CompileOptions{})
+}
+
+// CompileAndVerifyDocumentWithOptions loads a catalog from a provider, compiles a document, and verifies the SQL.
+func CompileAndVerifyDocumentWithOptions(ctx context.Context, provider catalog.Provider, ref catalog.Ref, documentText string, mode verify.Mode, options CompileOptions) (*formql.DocumentCompilation, verify.Result, error) {
+	compilation, err := CompileDocumentWithOptions(ctx, provider, ref, documentText, options)
 	if err != nil {
 		return nil, verify.Result{}, err
 	}
