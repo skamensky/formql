@@ -26,16 +26,18 @@ type Source interface {
 
 // ColumnRecord is raw column metadata captured from PostgreSQL introspection.
 type ColumnRecord struct {
-	TableName  string `json:"table_name"`
-	ColumnName string `json:"column_name"`
-	DataType   string `json:"data_type"`
-	UDTName    string `json:"udt_name,omitempty"`
+	TableSchema string `json:"table_schema,omitempty"`
+	TableName   string `json:"table_name"`
+	ColumnName  string `json:"column_name"`
+	DataType    string `json:"data_type"`
+	UDTName     string `json:"udt_name,omitempty"`
 }
 
 // RelationshipRecord is raw foreign-key metadata captured from PostgreSQL introspection.
 type RelationshipRecord struct {
 	SourceTable         string `json:"source_table"`
 	SourceColumn        string `json:"source_column"`
+	TargetSchema        string `json:"target_schema,omitempty"`
 	TargetTable         string `json:"target_table"`
 	TargetColumn        string `json:"target_column"`
 	JoinColumnIndexed   bool   `json:"join_column_indexed"`
@@ -48,6 +50,11 @@ type IntrospectionSnapshot struct {
 	BaseTable     string               `json:"base_table"`
 	Columns       []ColumnRecord       `json:"columns"`
 	Relationships []RelationshipRecord `json:"relationships"`
+}
+
+// crossSchemaSource is implemented by sources that can detect FK targets in other schemas.
+type crossSchemaSource interface {
+	CrossSchemaTargets(ctx context.Context, namespace string) ([]string, error)
 }
 
 // BuildSnapshot materializes a validated compiler catalog snapshot from a live source.
@@ -64,8 +71,24 @@ func BuildSnapshot(ctx context.Context, source Source, ref catalog.Ref) (*catalo
 		return nil, err
 	}
 
+	// Pull in tables from schemas referenced by cross-schema foreign keys.
+	if css, ok := source.(crossSchemaSource); ok {
+		foreignSchemaList, err := css.CrossSchemaTargets(ctx, namespace)
+		if err != nil {
+			return nil, err
+		}
+		for _, foreignSchema := range foreignSchemaList {
+			foreignTables, err := source.Tables(ctx, foreignSchema)
+			if err != nil {
+				return nil, err
+			}
+			tables = append(tables, foreignTables...)
+		}
+	}
+
 	compilationCatalog := &schema.Catalog{
 		BaseTable:     strings.ToLower(strings.TrimSpace(baseTable)),
+		BaseSchema:    namespace,
 		Tables:        tables,
 		Relationships: relationships,
 	}
@@ -82,8 +105,10 @@ func BuildSnapshot(ctx context.Context, source Source, ref catalog.Ref) (*catalo
 
 // SnapshotFromIntrospection converts raw host metadata into a compiler snapshot.
 func SnapshotFromIntrospection(payload IntrospectionSnapshot) (*catalog.Snapshot, error) {
+	namespace := strings.ToLower(strings.TrimSpace(payload.Namespace))
 	compilationCatalog := &schema.Catalog{
 		BaseTable:     strings.ToLower(strings.TrimSpace(payload.BaseTable)),
+		BaseSchema:    namespace,
 		Tables:        tablesFromColumnRecords(payload.Columns),
 		Relationships: relationshipsFromRecords(payload.Relationships),
 	}
@@ -92,7 +117,7 @@ func SnapshotFromIntrospection(payload IntrospectionSnapshot) (*catalog.Snapshot
 	}
 	return &catalog.Snapshot{
 		Catalog:  compilationCatalog,
-		Revision: strings.ToLower(strings.TrimSpace(payload.Namespace)),
+		Revision: namespace,
 	}, nil
 }
 
@@ -154,7 +179,7 @@ func (p *PostgresProvider) Load(ctx context.Context, ref catalog.Ref) (*catalog.
 // Tables loads table and column metadata from PostgreSQL.
 func (s *PostgresSource) Tables(ctx context.Context, namespace string) ([]schema.Table, error) {
 	const query = `
-		SELECT table_name, column_name, data_type, udt_name
+		SELECT table_schema, table_name, column_name, data_type, udt_name
 		FROM information_schema.columns
 		WHERE table_schema = $1
 		ORDER BY table_name, ordinal_position
@@ -169,19 +194,21 @@ func (s *PostgresSource) Tables(ctx context.Context, namespace string) ([]schema
 	columnRecords := make([]ColumnRecord, 0)
 
 	for rows.Next() {
+		var tableSchema string
 		var tableName string
 		var columnName string
 		var dataType string
 		var udtName string
-		if err := rows.Scan(&tableName, &columnName, &dataType, &udtName); err != nil {
+		if err := rows.Scan(&tableSchema, &tableName, &columnName, &dataType, &udtName); err != nil {
 			return nil, err
 		}
 
 		columnRecords = append(columnRecords, ColumnRecord{
-			TableName:  strings.ToLower(tableName),
-			ColumnName: strings.ToLower(columnName),
-			DataType:   strings.ToLower(dataType),
-			UDTName:    strings.ToLower(udtName),
+			TableSchema: strings.ToLower(tableSchema),
+			TableName:   strings.ToLower(tableName),
+			ColumnName:  strings.ToLower(columnName),
+			DataType:    strings.ToLower(dataType),
+			UDTName:     strings.ToLower(udtName),
 		})
 	}
 
@@ -190,6 +217,40 @@ func (s *PostgresSource) Tables(ctx context.Context, namespace string) ([]schema
 	}
 
 	return tablesFromColumnRecords(columnRecords), nil
+}
+
+// CrossSchemaTargets returns distinct schemas that are FK targets from the given namespace.
+func (s *PostgresSource) CrossSchemaTargets(ctx context.Context, namespace string) ([]string, error) {
+	const query = `
+		SELECT DISTINCT ccu.table_schema
+		FROM information_schema.table_constraints tc
+		JOIN information_schema.key_column_usage kcu
+			ON tc.constraint_name = kcu.constraint_name
+			AND tc.table_schema = kcu.table_schema
+		JOIN information_schema.constraint_column_usage ccu
+			ON ccu.constraint_schema = tc.constraint_schema
+			AND ccu.constraint_name = tc.constraint_name
+		WHERE tc.constraint_type = 'FOREIGN KEY'
+			AND tc.table_schema = $1
+			AND ccu.table_schema != $1
+	`
+
+	rows, err := s.db.QueryContext(ctx, query, schemaName(namespace, s.schemaName))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	targets := make([]string, 0)
+	for rows.Next() {
+		var targetSchema string
+		if err := rows.Scan(&targetSchema); err != nil {
+			return nil, err
+		}
+		targets = append(targets, strings.ToLower(targetSchema))
+	}
+
+	return targets, rows.Err()
 }
 
 // Relationships loads relationship and index metadata from PostgreSQL.
@@ -227,8 +288,8 @@ func (s *PostgresSource) Relationships(ctx context.Context, namespace string) ([
 			ON tc.constraint_name = kcu.constraint_name
 			AND tc.table_schema = kcu.table_schema
 		JOIN information_schema.constraint_column_usage ccu
-			ON ccu.constraint_name = tc.constraint_name
-			AND ccu.table_schema = tc.table_schema
+			ON ccu.constraint_schema = tc.constraint_schema
+			AND ccu.constraint_name = tc.constraint_name
 		WHERE tc.constraint_type = 'FOREIGN KEY'
 			AND tc.table_schema = $1
 		ORDER BY source_table, source_column
@@ -276,11 +337,12 @@ func (s *PostgresSource) Relationships(ctx context.Context, namespace string) ([
 	return relationshipsFromRecords(records), nil
 }
 
-func relationshipNameForColumn(columnName string) string {
-	name := strings.ToLower(columnName)
-	name = strings.TrimSuffix(name, "_id")
-	name = strings.TrimSuffix(name, "_fk")
-	return name
+func relationshipNameForRecord(record RelationshipRecord) string {
+	sourceColumn := strings.ToLower(strings.TrimSpace(record.SourceColumn))
+	if sourceColumn == "" {
+		return ""
+	}
+	return sourceColumn + "__rel"
 }
 
 func mapPostgresType(dataType, udtName string) schema.Type {
@@ -306,10 +368,12 @@ func boolPtr(value bool) *bool {
 func tablesFromColumnRecords(records []ColumnRecord) []schema.Table {
 	orderedNames := make([]string, 0)
 	tableColumns := make(map[string][]schema.Column)
+	tableSchemas := make(map[string]string)
 	for _, record := range records {
 		tableName := strings.ToLower(strings.TrimSpace(record.TableName))
 		if _, ok := tableColumns[tableName]; !ok {
 			orderedNames = append(orderedNames, tableName)
+			tableSchemas[tableName] = strings.ToLower(strings.TrimSpace(record.TableSchema))
 		}
 		tableColumns[tableName] = append(tableColumns[tableName], schema.Column{
 			Name: strings.ToLower(strings.TrimSpace(record.ColumnName)),
@@ -321,6 +385,7 @@ func tablesFromColumnRecords(records []ColumnRecord) []schema.Table {
 	for _, tableName := range orderedNames {
 		tables = append(tables, schema.Table{
 			Name:    tableName,
+			Schema:  tableSchemas[tableName],
 			Columns: tableColumns[tableName],
 		})
 	}
@@ -330,8 +395,10 @@ func tablesFromColumnRecords(records []ColumnRecord) []schema.Table {
 func relationshipsFromRecords(records []RelationshipRecord) []schema.Relationship {
 	relationships := make([]schema.Relationship, 0, len(records))
 	for _, record := range records {
+		name := relationshipNameForRecord(record)
+
 		relationships = append(relationships, schema.Relationship{
-			Name:                relationshipNameForColumn(record.SourceColumn),
+			Name:                name,
 			FromTable:           strings.ToLower(strings.TrimSpace(record.SourceTable)),
 			ToTable:             strings.ToLower(strings.TrimSpace(record.TargetTable)),
 			JoinColumn:          strings.ToLower(strings.TrimSpace(record.SourceColumn)),

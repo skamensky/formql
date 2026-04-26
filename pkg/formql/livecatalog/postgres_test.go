@@ -33,7 +33,7 @@ func TestSnapshotFromIntrospection(t *testing.T) {
 	if len(snapshot.Catalog.Relationships) != 1 {
 		t.Fatalf("expected 1 relationship, got %d", len(snapshot.Catalog.Relationships))
 	}
-	if got := snapshot.Catalog.Relationships[0].Name; got != "customer" {
-		t.Fatalf("expected inferred relationship name customer, got %q", got)
+	if got := snapshot.Catalog.Relationships[0].Name; got != "customer_id__rel" {
+		t.Fatalf("expected inferred relationship name customer_id__rel, got %q", got)
 	}
 }

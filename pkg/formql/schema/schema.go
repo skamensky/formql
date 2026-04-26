@@ -48,6 +48,7 @@ type Column struct {
 // Table describes a schema table.
 type Table struct {
 	Name    string   `json:"name"`
+	Schema  string   `json:"schema,omitempty"`
 	Columns []Column `json:"columns"`
 }
 
@@ -81,6 +82,7 @@ type Explorer interface {
 // Catalog is the frontend/backend shared schema model.
 type Catalog struct {
 	BaseTable     string         `json:"base_table"`
+	BaseSchema    string         `json:"base_schema,omitempty"`
 	Tables        []Table        `json:"tables"`
 	Relationships []Relationship `json:"relationships"`
 
@@ -220,6 +222,18 @@ func (r Relationship) ResolvedTargetColumn() string {
 		return "id"
 	}
 	return r.TargetColumn
+}
+
+// SchemaFor returns the resolved DB schema for a table: table-level Schema → Catalog BaseSchema → "public".
+func (c *Catalog) SchemaFor(tableName string) string {
+	c.buildIndexes()
+	if t, ok := c.tableIndex[normalize(tableName)]; ok && t.Schema != "" {
+		return t.Schema
+	}
+	if c.BaseSchema != "" {
+		return c.BaseSchema
+	}
+	return "public"
 }
 
 // Compatible returns whether two types can coexist in a single semantic slot.
