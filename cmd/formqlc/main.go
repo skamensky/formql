@@ -6,11 +6,13 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/skamensky/formql/pkg/formql"
 	"github.com/skamensky/formql/pkg/formql/api"
 	"github.com/skamensky/formql/pkg/formql/catalog"
+	"github.com/skamensky/formql/pkg/formql/filemeta"
 	"github.com/skamensky/formql/pkg/formql/livecatalog"
 	"github.com/skamensky/formql/pkg/formql/lsp"
 	"github.com/skamensky/formql/pkg/formql/schema"
@@ -103,7 +105,7 @@ func runHIR(args []string) error {
 		return err
 	}
 	config := extractCommonConfig(fs)
-	catalog, err := loadCatalog(config)
+	catalog, err := loadCatalog(&config)
 	if err != nil {
 		return err
 	}
@@ -120,7 +122,7 @@ func runDocumentHIR(args []string) error {
 		return err
 	}
 	config := extractCommonConfig(fs)
-	catalog, err := loadCatalog(config)
+	catalog, err := loadCatalog(&config)
 	if err != nil {
 		return err
 	}
@@ -138,7 +140,7 @@ func runQuery(args []string) error {
 		return err
 	}
 	config := extractCommonConfig(fs)
-	catalog, err := loadCatalog(config)
+	catalog, err := loadCatalog(&config)
 	if err != nil {
 		return err
 	}
@@ -165,7 +167,7 @@ func runDocumentQuery(args []string) error {
 		return err
 	}
 	config := extractCommonConfig(fs)
-	catalog, err := loadCatalog(config)
+	catalog, err := loadCatalog(&config)
 	if err != nil {
 		return err
 	}
@@ -192,7 +194,7 @@ func runTypecheck(args []string) error {
 		return err
 	}
 	config := extractCommonConfig(fs)
-	catalog, err := loadCatalog(config)
+	catalog, err := loadCatalog(&config)
 	if err != nil {
 		return err
 	}
@@ -221,7 +223,7 @@ func runDocumentTypecheck(args []string) error {
 		return err
 	}
 	config := extractCommonConfig(fs)
-	catalog, err := loadCatalog(config)
+	catalog, err := loadCatalog(&config)
 	if err != nil {
 		return err
 	}
@@ -287,7 +289,7 @@ func runVerifyQuery(args []string) error {
 	}
 
 	config := extractCommonConfig(fs)
-	catalog, err := loadCatalog(config)
+	catalog, err := loadCatalog(&config)
 	if err != nil {
 		return err
 	}
@@ -322,7 +324,7 @@ func runVerifyDocumentQuery(args []string) error {
 	}
 
 	config := extractCommonConfig(fs)
-	catalog, err := loadCatalog(config)
+	catalog, err := loadCatalog(&config)
 	if err != nil {
 		return err
 	}
@@ -377,20 +379,18 @@ func runLSP(args []string) error {
 	fs := flag.NewFlagSet("lsp", flag.ContinueOnError)
 	databaseURL := fs.String("database-url", envOr("FORMULA_DATABASE_URL", envOr("DATABASE_URL", "")), "postgres connection string")
 	schemaPath := fs.String("schema", "", "path to schema json")
-	table := fs.String("table", envOr("FORMULA_BASE_TABLE", ""), "base table")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
 	ctx := context.Background()
-	provider, err := loadLSPProvider(ctx, *databaseURL, *schemaPath, *table)
+	provider, err := loadLSPProvider(ctx, *databaseURL, *schemaPath)
 	if err != nil {
 		return err
 	}
 	defer provider.Close()
 
 	server := lsp.NewServer(os.Stdin, os.Stdout, provider, lsp.Config{
-		BaseTable:  *table,
 		SchemaPath: *schemaPath,
 	})
 	return server.Run(ctx)
@@ -398,6 +398,7 @@ func runLSP(args []string) error {
 
 type commonConfig struct {
 	formulaText string
+	formulaPath string
 	schemaPath  string
 	databaseURL string
 	table       string
@@ -406,7 +407,9 @@ type commonConfig struct {
 func commonFlagSet(name string) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.String("formula", "", "formula source")
+	fs.String("formula-file", "", "path to formula/document source")
 	fs.String("document", "", "document source")
+	fs.String("document-file", "", "path to document source")
 	fs.String("schema", "", "path to schema json")
 	fs.String("database-url", envOr("FORMULA_DATABASE_URL", envOr("DATABASE_URL", "")), "postgres connection string")
 	fs.String("table", envOr("FORMULA_BASE_TABLE", ""), "base table")
@@ -418,18 +421,26 @@ func extractCommonConfig(fs *flag.FlagSet) commonConfig {
 	if source == "" {
 		source = fs.Lookup("document").Value.String()
 	}
+	sourcePath := fs.Lookup("formula-file").Value.String()
+	if sourcePath == "" {
+		sourcePath = fs.Lookup("document-file").Value.String()
+	}
 	return commonConfig{
 		formulaText: source,
+		formulaPath: sourcePath,
 		schemaPath:  fs.Lookup("schema").Value.String(),
 		databaseURL: fs.Lookup("database-url").Value.String(),
 		table:       fs.Lookup("table").Value.String(),
 	}
 }
 
-func loadCatalog(config commonConfig) (*schema.Catalog, error) {
-	if config.formulaText == "" {
-		return nil, fmt.Errorf("command requires -formula or -document")
+func loadCatalog(config *commonConfig) (*schema.Catalog, error) {
+	sourceText, table, err := resolveCommandSource(*config)
+	if err != nil {
+		return nil, err
 	}
+	config.formulaText = sourceText
+
 	if config.schemaPath != "" {
 		file, err := os.ReadFile(config.schemaPath)
 		if err != nil {
@@ -439,20 +450,59 @@ func loadCatalog(config commonConfig) (*schema.Catalog, error) {
 		if err != nil {
 			return nil, err
 		}
-		if config.table != "" {
-			catalog.BaseTable = config.table
-		}
+		catalog.BaseTable = table
 		return catalog, nil
 	}
 	if config.databaseURL == "" {
 		return nil, fmt.Errorf("provide either -schema or -database-url")
 	}
-	if config.table == "" {
-		return nil, fmt.Errorf("provide -table when loading a live catalog")
+	if table == "" {
+		return nil, fmt.Errorf("provide -table for inline live catalog commands or file metadata for file-based live catalog commands")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	return livecatalog.LoadCatalog(ctx, config.databaseURL, config.table)
+	return livecatalog.LoadCatalog(ctx, config.databaseURL, table)
+}
+
+func resolveCommandSource(config commonConfig) (string, string, error) {
+	if config.formulaPath == "" {
+		if config.formulaText == "" {
+			return "", "", fmt.Errorf("command requires -formula, -document, -formula-file, or -document-file")
+		}
+		table := strings.ToLower(strings.TrimSpace(config.table))
+		if table == "" {
+			return "", "", fmt.Errorf("inline commands require -table; file commands require source or sidecar metadata")
+		}
+		return config.formulaText, table, nil
+	}
+
+	source, err := os.ReadFile(config.formulaPath)
+	if err != nil {
+		return "", "", err
+	}
+	text := string(source)
+
+	table, err := resolveFileBaseTable(config.formulaPath, text)
+	if err != nil {
+		return "", "", err
+	}
+	return text, table, nil
+}
+
+func resolveFileBaseTable(path, text string) (string, error) {
+	if metadata, ok, err := filemeta.ParseSource(text); err != nil {
+		return "", err
+	} else if ok && metadata.BaseTable() != "" {
+		return metadata.BaseTable(), nil
+	}
+
+	if metadata, _, ok, err := filemeta.LoadSidecar(path); err != nil {
+		return "", err
+	} else if ok && metadata.BaseTable() != "" {
+		return metadata.BaseTable(), nil
+	}
+
+	return "", fmt.Errorf("%s is missing FormQL table metadata; add a leading comment like // formql: table=rental_contract or adjacent %s", path, filemeta.SidecarPaths(path)[0])
 }
 
 func writeJSON(value any) error {
@@ -479,7 +529,7 @@ func envOr(name, fallback string) string {
 	return fallback
 }
 
-func loadLSPProvider(ctx context.Context, databaseURL, schemaPath, table string) (catalog.ManagedProvider, error) {
+func loadLSPProvider(ctx context.Context, databaseURL, schemaPath string) (catalog.ManagedProvider, error) {
 	if schemaPath != "" {
 		file, err := os.ReadFile(schemaPath)
 		if err != nil {
@@ -489,9 +539,6 @@ func loadLSPProvider(ctx context.Context, databaseURL, schemaPath, table string)
 		var schemaCatalog schema.Catalog
 		if err := json.Unmarshal(file, &schemaCatalog); err != nil {
 			return nil, err
-		}
-		if table != "" {
-			schemaCatalog.BaseTable = table
 		}
 		if err := schemaCatalog.Validate(); err != nil {
 			return nil, err
@@ -505,9 +552,6 @@ func loadLSPProvider(ctx context.Context, databaseURL, schemaPath, table string)
 
 	if databaseURL == "" {
 		return nil, fmt.Errorf("lsp requires either -schema or -database-url")
-	}
-	if table == "" {
-		return nil, fmt.Errorf("lsp requires -table when using a live database")
 	}
 
 	return livecatalog.NewPostgresProvider(ctx, databaseURL)
