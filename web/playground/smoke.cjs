@@ -43,7 +43,7 @@ async function main() {
 
   const compiled = globalThis.FormQL.compileCatalogJSON(
     catalog,
-    'customer_rel.email & " / " & STRING(actual_total)',
+    'customer_id__rel.email & " / " & STRING(actual_total)',
     {
       baseTable: "rental_contract",
       fieldAlias: "result",
@@ -56,9 +56,21 @@ async function main() {
     throw new Error("wasm compiled SQL did not reference rental_contract");
   }
 
+  const completion = globalThis.FormQL.completeCatalogJSON(
+    catalog,
+    "customer_id__rel.",
+    "customer_id__rel.".length,
+    {
+      baseTable: "rental_contract",
+    },
+  );
+  if (!completion.ok || !completion.items.some((item) => item.label === "email")) {
+    throw new Error(`wasm completion failed: ${JSON.stringify(completion)}`);
+  }
+
   const documentCompiled = globalThis.FormQL.compileDocumentCatalogJSON(
     catalog,
-    'actual_total, customer_rel.email, vehicle_rel.model_name AS vehicle_model',
+    'actual_total, customer_id__rel.email AS customer_email, vehicle_id__rel.model_name AS vehicle_model',
     {
       baseTable: "rental_contract",
     },
@@ -90,7 +102,7 @@ async function main() {
 
   const backendDocumentCompiled = await postJSON(`${baseURL}/api/compile-document-and-verify`, {
     catalog_json: catalog,
-    document: "actual_total, customer_rel.email",
+    document: "actual_total, customer_id__rel.email AS customer_email",
     verify_mode: "syntax",
   });
   if (!backendDocumentCompiled.ok || !backendDocumentCompiled.verification.ok) {
@@ -98,6 +110,17 @@ async function main() {
   }
   if (!backendDocumentCompiled.compilation.sql.query.includes('"customer_email"')) {
     throw new Error("backend document query did not include customer_email projection");
+  }
+
+  const executed = await postJSON(`${baseURL}/api/execute-sql`, {
+    sql: compiled.compilation.sql.query,
+    max_rows: 5,
+  });
+  if (!executed.ok || !Array.isArray(executed.rows) || executed.rows.length === 0) {
+    throw new Error(`backend execute failed: ${JSON.stringify(executed)}`);
+  }
+  if (!executed.columns.includes("result")) {
+    throw new Error(`backend execute missing result column: ${JSON.stringify(executed)}`);
   }
 
   console.log("web backend + wasm smoke passed");
